@@ -1,0 +1,8 @@
+/index/
+/.nix-sessions/
+/_ci/
+/_site/
+/result
+/result-*
+__pycache__/
+*.pyc

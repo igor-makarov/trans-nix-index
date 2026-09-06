@@ -1,0 +1,27 @@
+name: update-index
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+concurrency:
+  group: published-data
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  update:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SCHEDULES == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      EVAL_WORKERS: '2'
+      EVAL_MAXMEM: '2000'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - name: Restore latest snapshot, update incrementally, publish releases
+        run: mise run nix -- develop --command bash scripts/ci/update

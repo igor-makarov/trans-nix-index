@@ -1,0 +1,24 @@
+name: census
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+concurrency:
+  group: published-data
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  census:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SCHEDULES == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 300
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: jdx/mise-action@v4
+      - name: Restore, census every published system, and publish observations
+        run: mise run nix -- develop --command bash scripts/ci/census

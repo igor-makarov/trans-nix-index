@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${MULTIVERSE_ROOT:?Set a disposable work directory}"
+python3 tools/resolve-data.py _ci/previous "$@"
+python3 tools/validate-data.py _ci/previous
+rm -rf "$MULTIVERSE_ROOT"
+mkdir -p "$MULTIVERSE_ROOT/index"
+cp _ci/previous/{versions,history,stats}.json "$MULTIVERSE_ROOT/index/"
+cp _ci/previous/{revisions,releases}.json "$MULTIVERSE_ROOT/"
+if [[ "${RESTORE_STORE_DATA:-1}" == 1 ]]; then
+  bash tools/restore-outpaths-state.sh _ci/previous
+fi

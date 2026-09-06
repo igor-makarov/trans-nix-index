@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${GITHUB_REPOSITORY:?Set the destination repository}"
+: "${MULTIVERSE_ROOT:?Run update or census first}"
+export GH_REPO="$GITHUB_REPOSITORY"
+id="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%d%H%M%S)}-${GITHUB_RUN_ATTEMPT:-1}"
+work="$MULTIVERSE_ROOT/index/.outpaths"
+rm -rf _ci/publish
+mkdir -p _ci/publish/{artifacts,state}
+cp "$MULTIVERSE_ROOT"/index/{versions,history,stats}.json _ci/publish/
+cp "$MULTIVERSE_ROOT"/{revisions,releases}.json _ci/publish/
+if [[ "${1:-update}" == metadata ]]; then
+  cp -r _ci/previous/artifacts/. _ci/publish/artifacts/
+  cp -r _ci/previous/state/. _ci/publish/state/
+else
+  cp "$work"/data/{outpaths-,tip-outpaths-,outs-}*.json _ci/publish/artifacts/
+  cp "$work"/data/{info-indexed,refs-indexed,closures,outs-indexed}.json _ci/publish/artifacts/
+  cp "$work/graph.jsonl" _ci/publish/state/
+  shopt -s nullglob
+  for file in _ci/previous/state/*.json "$work"/data/misses-*.json "$work"/census-results.json; do
+    [[ ! -f "$file" ]] || cp "$file" _ci/publish/state/
+  done
+  if [[ "${1:-update}" == update ]]; then
+    python3 - <<'PY'
+import json, runpy
+version = runpy.run_path('tools/update-plan.py')['STORE_GENERATOR']
+with open('_ci/publish/state/store-generator.json', 'w') as output:
+    json.dump({'version': version}, output)
+PY
+  fi
+fi
+python3 tools/snapshot.py _ci/publish _ci/data.tar.gz
+python3 tools/validate-data.py _ci/publish
+# Drafts are not discoverable through releases/latest until the upload succeeds.
+tag="data-$id"
+gh release create "$tag" --target "${GITHUB_SHA:-main}" --draft \
+  --title "Complete data snapshot $id" --notes 'Self-contained index, store data, and crawl state. No earlier release or upstream data assets required.'
+gh release upload "$tag" _ci/data.tar.gz
+gh release edit "$tag" --draft=false --latest

@@ -1,0 +1,78 @@
+name: pages
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/**'
+      - 'nix/**'
+      - 'tools/**'
+      - 'scripts/**'
+      - '*.nix'
+      - '.github/**'
+  workflow_run:
+    workflows: [update-index, census]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  publication:
+    if: >-
+      (github.event_name == 'workflow_dispatch' || vars.ENABLE_PAGES == 'true') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      - id: check
+        name: Skip successful data runs that published nothing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          TAG: data-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+        run: |
+          if [[ "$EVENT" != workflow_run ]]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          elif published=$(gh api "repos/$GH_REPO/releases/tags/$TAG" --jq '.draft | not' 2>error); then
+            echo "deploy=$published" >> "$GITHUB_OUTPUT"
+          elif grep -q 'HTTP 404' error; then
+            echo 'No release published by this run; skipping Pages'
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+          else
+            cat error >&2
+            exit 1
+          fi
+  deploy:
+    needs: publication
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    if: needs.publication.outputs.deploy == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      CACHIX_CACHE: ${{ vars.CACHIX_CACHE }}
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: jdx/mise-action@v4
+      - name: Build and export site from Docker
+        run: mise run nix -- develop --command bash scripts/ci/pages
+      - name: Browser tests
+        run: mise run nix -- develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

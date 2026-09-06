@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# All generated files are isolated from the source checkout.
+export MULTIVERSE_ROOT="$PWD/_ci/work"
+export MULTIVERSE_NIX="$PWD/nix"
+RESTORE_STORE_DATA=0 bash scripts/ci/restore "$@"
+bash tools/fetch-unstable-revisions.sh
+bash tools/add-narhashes.sh
+bash tools/fetch-releases.sh
+plan=$(python3 tools/update-plan.py _ci/previous "$MULTIVERSE_ROOT")
+echo "Update plan: $plan"
+case "$plan" in
+  none) echo 'No changes; skipping evaluation, crawl, and publication'; exit 0 ;;
+  metadata) bash scripts/ci/publish-data metadata; exit 0 ;;
+esac
+bash tools/restore-outpaths-state.sh _ci/previous
+bash tools/build-index.sh --incremental -j "${EVAL_WORKERS:-2}"
+bash tools/build-history.sh --incremental
+bash tools/build-stats.sh
+bash tools/update-outpaths.sh
+bash scripts/ci/publish-data

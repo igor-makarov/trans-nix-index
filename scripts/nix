@@ -3,18 +3,88 @@ set -euo pipefail
 
 # mise runs tasks from the project root; mount the caller's working directory.
 workdir="${MISE_ORIGINAL_CWD:-$PWD}"
+root="$(cd "$(dirname "$0")/.." && pwd -P)"
 terminal=(-i)
 if [[ -t 0 && -t 1 ]]; then
   terminal+=(-t)
 fi
 
-exec docker run --rm "${terminal[@]}" \
-  --pull=always \
+# A lease also covers SIGKILL, where EXIT/TERM traps cannot run. Keep it under
+# the project so Colima can share it, regardless of its /tmp mount settings.
+mkdir -p "$root/.nix-sessions"
+session="$(mktemp -d "$root/.nix-sessions/run.XXXXXXXX")"
+name="trans-nix-index-$(basename "$session")-$$"
+heartbeat_pid=""
+cleanup() {
+  status=$?
+  trap - EXIT INT TERM HUP
+  if [[ -n "$heartbeat_pid" ]]; then
+    kill "$heartbeat_pid" 2>/dev/null || true
+    wait "$heartbeat_pid" 2>/dev/null || true
+  fi
+  # Remove only this invocation's container, never the shared volumes.
+  docker rm -f "$name" >/dev/null 2>&1 || true
+  rm -rf "$session"
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+printf '0\n' > "$session/heartbeat"
+(
+  counter=0
+  while kill -0 "$$" 2>/dev/null; do
+    counter=$((counter + 1))
+    printf '%s\n' "$counter" > "$session/next"
+    mv "$session/next" "$session/heartbeat"
+    sleep 1
+  done
+) &
+heartbeat_pid=$!
+
+# Wait on a background client so Bash can execute traps promptly. Explicitly
+# preserve stdin; otherwise an asynchronous command may inherit /dev/null.
+docker run --rm --init --name "$name" \
+  --label trans-nix-index.session=true \
+  "${terminal[@]}" --pull=always \
   --mount "type=bind,source=${workdir},target=/workspace" \
+  --mount "type=bind,source=${session},target=/run/nix-session,readonly" \
   --mount type=volume,source=trans-nix-index-nix,target=/nix \
   --mount type=volume,source=trans-nix-index-cache,target=/root/.cache/nix \
   --workdir /workspace \
+  --env GH_TOKEN --env GITHUB_TOKEN --env GITHUB_REPOSITORY --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT --env GITHUB_SHA \
+  --env CACHIX_CACHE --env CACHIX_AUTH_TOKEN \
+  --env EVAL_WORKERS --env EVAL_MAXMEM \
   --env 'NIX_CONFIG=experimental-features = nix-command flakes
 sandbox = false' \
-  --entrypoint nix \
-  nixos/nix:latest "$@"
+  --entrypoint /bin/sh nixos/nix:latest -c '
+    parent=$$
+    (
+      previous=""
+      stale=0
+      while kill -0 "$parent" 2>/dev/null; do
+        current=$(cat /run/nix-session/heartbeat 2>/dev/null || true)
+        if [ -z "$current" ] || [ "$current" = "$previous" ]; then
+          stale=$((stale + 1))
+        else
+          stale=0
+        fi
+        if [ "$stale" -ge 3 ]; then
+          echo "Nix client heartbeat lost; terminating container" >&2
+          kill -TERM "$parent" 2>/dev/null || true
+          sleep 1
+          kill -KILL "$parent" 2>/dev/null || true
+          exit
+        fi
+        previous=$current
+        sleep 1
+      done
+    ) &
+    # Linux bind mounts preserve the runner UID; Nix/libgit2 runs as root.
+    # Trust only the explicitly mounted checkout, not every repository.
+    git config --global --add safe.directory /workspace
+    exec nix "$@"
+  ' nix "$@" <&0 &
+client_pid=$!
+wait "$client_pid"

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export MULTIVERSE_ROOT="$PWD/_ci/work"
+bash scripts/ci/restore "$@"
+work="$MULTIVERSE_ROOT/index/.outpaths"
+data="$work/data"
+seeds=("$data"/outpaths-*.json "$data"/tip-outpaths-*.json)
+python3 tools/census.py --seeds "${seeds[@]}" \
+  --threads 128 --out "$work/census-results.json" \
+  --graph "$work/graph.jsonl" --date "$(date -u +%F)"
+# Materialize the observations into website artifacts, without re-evaluating nixpkgs.
+python3 tools/consolidate-outpaths.py --seeds "${seeds[@]}" \
+  --graph "$work/graph.jsonl" --prev-dir "$data/prev-shards" --out-dir "$data"
+cp "$data/prev-shards/outs-indexed.json" "$data/outs-indexed.json"
+bash scripts/ci/publish-data census
