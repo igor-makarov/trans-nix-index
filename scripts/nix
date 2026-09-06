@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# mise runs tasks from the project root; mount the caller's working directory.
+workdir="${MISE_ORIGINAL_CWD:-$PWD}"
+terminal=(-i)
+if [[ -t 0 && -t 1 ]]; then
+  terminal+=(-t)
+fi
+
+exec docker run --rm "${terminal[@]}" \
+  --pull=always \
+  --mount "type=bind,source=${workdir},target=/workspace" \
+  --mount type=volume,source=trans-nix-index-nix,target=/nix \
+  --mount type=volume,source=trans-nix-index-cache,target=/root/.cache/nix \
+  --workdir /workspace \
+  --env 'NIX_CONFIG=experimental-features = nix-command flakes
+sandbox = false' \
+  --entrypoint nix \
+  nixos/nix:latest "$@"
