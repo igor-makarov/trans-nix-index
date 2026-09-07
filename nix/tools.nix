@@ -12,5 +12,6 @@
     curl
     gzip
     gh
+    oras
   ];
 }
