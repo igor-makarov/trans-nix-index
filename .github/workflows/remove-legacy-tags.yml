@@ -1,0 +1,22 @@
+name: remove-legacy-tags
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: published-data
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - name: Remove old aliases while preserving all snapshot digests
+        run: mise run nix -- develop --command python3 tools/remove-legacy-tags.py
