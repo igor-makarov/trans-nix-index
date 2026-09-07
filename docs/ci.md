@@ -16,8 +16,8 @@ Each `YYYY-MM-DDTHH-MM-SSZ-run-<run-id>-<attempt>` registry tag holds one
 self-contained `data.tar.gz`. For example, `2026-09-07T06-30-00Z-run-34088947935-1`
 records the UTC publication time, GitHub Actions run ID, and attempt number.
 `latest` points to the newest successful publication. Existing snapshots use their
-OCI creation timestamp (the GHCR migration time); their old tags remain aliases
-of the same immutable digests.
+OCI creation timestamp (the GHCR migration time). Legacy `data-*` aliases have
+been removed; the timestamp tags retain the same immutable digests.
 
 Archive contents:
 
