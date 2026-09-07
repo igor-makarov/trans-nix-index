@@ -2,7 +2,6 @@
 set -euo pipefail
 : "${GITHUB_REPOSITORY:?Set the destination repository}"
 : "${MULTIVERSE_ROOT:?Run update or census first}"
-id="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%d%H%M%S)}-${GITHUB_RUN_ATTEMPT:-1}"
 work="$MULTIVERSE_ROOT/index/.outpaths"
 rm -rf _ci/publish
 mkdir -p _ci/publish/{artifacts,state}
@@ -32,4 +31,4 @@ python3 tools/snapshot.py _ci/publish _ci/data.tar.gz
 python3 tools/validate-data.py _ci/publish
 # OCI publishes the manifest only after its blob upload succeeds. Advance
 # latest only after reading back and verifying that manifest's archive digest.
-python3 tools/publish-oci.py _ci/data.tar.gz "data-$id"
+python3 tools/publish-oci.py _ci/data.tar.gz

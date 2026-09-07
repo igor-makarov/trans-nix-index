@@ -13,7 +13,7 @@
         actionlint -shellcheck="" .github/workflows/*.yml
         bash -n ${../scripts/nix}
         for script in ${../scripts/ci}/* ${../tools}/*.sh; do bash -n "$script"; done
-        # Workflow policy: automation publishes releases, never source commits.
+        # Workflow policy: automation publishes OCI snapshots, never source commits.
         if grep -E 'git (add|commit|push)' .github/workflows/*.yml ${../scripts/ci}/*; then exit 1; fi
         touch "$out"
       '';
@@ -55,6 +55,7 @@
   '';
   oci = pkgs.runCommand "check-oci" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 ${../tests/oci.py} ${../tools} | tee $out
+    python3 ${../tests/snapshot-tags.py} ${../tools} | tee -a $out
   '';
   docs-links = pkgs.runCommand "check-docs-links" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     mkdir -p repo/docs repo/nix repo/tools repo/scripts/ci

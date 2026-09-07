@@ -12,7 +12,14 @@ repository's Docker Nix wrapper. The build toolchain is pinned in source.
 ## Snapshot layout
 
 Snapshots are public OCI artifacts in `ghcr.io/igor-makarov/trans-nix-index-data`.
-Each `data-<run-id>-<attempt>` registry tag holds one self-contained `data.tar.gz`:
+Each `YYYY-MM-DDTHH-MM-SSZ-run-<run-id>-<attempt>` registry tag holds one
+self-contained `data.tar.gz`. For example, `2026-09-07T06-30-00Z-run-34088947935-1`
+records the UTC publication time, GitHub Actions run ID, and attempt number.
+`latest` points to the newest successful publication. Existing snapshots use their
+OCI creation timestamp (the GHCR migration time); their old tags remain aliases
+of the same immutable digests.
+
+Archive contents:
 
 - Index JSON: versions, history, stats, revisions, and releases.
 - `artifacts/`: all store-data files consumed by the site.
@@ -27,8 +34,9 @@ Older snapshot tags are rollback points; manifest digests identify immutable con
 ORAS uploads the archive blob before publishing its OCI manifest. The publisher
 verifies the manifest's archive digest before advancing the `latest` registry tag.
 Consumers resolve a tag once and then read only by digest, verifying the layer's
-checksum and the archive's internal manifest. Pages checks whether the triggering
-run published its registry tag before starting a data-triggered build.
+checksum and the archive's internal manifest. Pages checks registry tags for the
+triggering run ID and attempt before starting a data-triggered build; this does
+not require knowing the publication timestamp. Tag listing is paginated.
 Updater and census share a concurrency group to serialize publications.
 
 ## Permissions and automation

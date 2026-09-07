@@ -35,12 +35,13 @@ jobs:
         name: Skip successful data runs that published nothing
         env:
           EVENT: ${{ github.event_name }}
-          TAG: data-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           if [[ "$EVENT" != workflow_run ]]; then
             echo 'deploy=true' >> "$GITHUB_OUTPUT"
           else
-            published=$(python3 tools/check-publication.py "$TAG")
+            published=$(python3 tools/check-publication.py "$RUN_ID" "$RUN_ATTEMPT")
             echo "deploy=$published" >> "$GITHUB_OUTPUT"
           fi
   deploy:
