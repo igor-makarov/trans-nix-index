@@ -12,6 +12,5 @@
     curl
     gzip
     gh
-    cachix
   ];
 }

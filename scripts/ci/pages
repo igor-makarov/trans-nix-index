@@ -3,7 +3,7 @@ set -euo pipefail
 python3 tools/resolve-data.py _ci/snapshot "$@"
 python3 tools/validate-data.py _ci/snapshot
 hash=$(nix hash path --sri _ci/snapshot)
-bash scripts/ci/build build --file nix/site-build.nix \
+nix build --file nix/site-build.nix \
   --argstr snapshot "$PWD/_ci/snapshot" --argstr snapshotHash "$hash" \
   --out-link result-site -L
 rm -rf _site

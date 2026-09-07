@@ -54,7 +54,6 @@ docker run --rm --init --name "$name" \
   --mount type=volume,source=trans-nix-index-cache,target=/root/.cache/nix \
   --workdir /workspace \
   --env GH_TOKEN --env GITHUB_TOKEN --env GITHUB_REPOSITORY --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT --env GITHUB_SHA \
-  --env CACHIX_CACHE --env CACHIX_AUTH_TOKEN \
   --env EVAL_WORKERS --env EVAL_MAXMEM \
   --env 'NIX_CONFIG=experimental-features = nix-command flakes
 sandbox = false' \
