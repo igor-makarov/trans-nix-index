@@ -46,7 +46,8 @@ The OCI source annotation associates the package with this repository. The GHCR
 package must remain public for anonymous downloads and pull-request site builds.
 Registry credentials are temporary and never included in the snapshot.
 
-After a successful initial publication and deployment, set repository variables
-`ENABLE_PAGES=true` and `ENABLE_SCHEDULES=true`. Manual dispatch bypasses those gates.
+Automation is enabled by default. Set repository variables `DISABLE_PAGES=true`
+or `DISABLE_SCHEDULES=true` to pause automatic deployment or scheduled data jobs.
+Unset or `false` values leave automation enabled. Manual dispatch bypasses those gates.
 GitHub Pages deploys through Actions and additionally needs `pages: write` and
 `id-token: write`. Public Nix binary-cache downloads require no account or key.

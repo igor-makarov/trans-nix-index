@@ -15,6 +15,11 @@
         for script in ${../scripts/ci}/* ${../tools}/*.sh; do bash -n "$script"; done
         # Workflow policy: automation publishes OCI snapshots, never source commits.
         if grep -E 'git (add|commit|push)' .github/workflows/*.yml ${../scripts/ci}/*; then exit 1; fi
+        # Automation defaults on; manual dispatch bypasses the opt-out gates.
+        for workflow in census update-index; do
+          grep -Fq "github.event_name == 'workflow_dispatch' || vars.DISABLE_SCHEDULES != 'true'" ".github/workflows/$workflow.yml"
+        done
+        grep -Fq "github.event_name == 'workflow_dispatch' || vars.DISABLE_PAGES != 'true'" .github/workflows/pages.yml
         touch "$out"
       '';
   extract = pkgs.runCommand "check-extract" {
