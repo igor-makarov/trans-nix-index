@@ -33,6 +33,7 @@ let
   ];
 
   committed = import ../nix/nested-sets.nix;
+  withCommitted = extract committed;
 in
 
 # Top-level extraction is unchanged: an explicit `version` is preferred, a
@@ -79,6 +80,12 @@ assert builtins.intersectAttrs topLevelOnly withJetbrains == topLevelOnly;
 assert builtins.isList committed;
 assert builtins.all builtins.isString committed;
 assert builtins.elem "jetbrains" committed;
+assert builtins.elem "python3Packages" committed;
+assert withCommitted."python3Packages.requests" == "2.32.3";
+assert !(withCommitted ? "python3Packages.broken");
+assert !(withCommitted ? "python3Packages.nested.child");
+assert !(withCommitted ? "pythonPackages.requests");
+assert builtins.intersectAttrs withJetbrains withCommitted == withJetbrains;
 
 {
   topLevel = builtins.length (builtins.attrNames topLevelOnly);

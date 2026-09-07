@@ -45,6 +45,15 @@ in
     };
   };
 
+  python3Packages = {
+    recurseForDerivations = true;
+    requests = drv "python3.13-requests-2.32.3" "2.32.3";
+    broken = throw "broken Python package";
+    nested = {
+      child = drv "child-1" "1";
+    };
+  };
+
   # An unlisted set, walked by nothing. This is the whole point of the
   # allow-list: haskellPackages and friends stay out of the index.
   pythonPackages = {

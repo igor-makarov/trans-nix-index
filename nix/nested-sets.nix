@@ -22,4 +22,8 @@
   # 29 children, 27 of them IDEs with a `meta.mainProgram`, and only two share
   # a name with a top-level attribute. The set people ask for by name.
   "jetbrains"
+
+  # Follow nixpkgs' default Python 3 package set, without indexing every
+  # version-specific Python set and duplicating their package histories.
+  "python3Packages"
 ]
