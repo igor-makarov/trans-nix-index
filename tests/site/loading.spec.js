@@ -20,13 +20,13 @@ const ATTR = "ripgrep";
 // deliberately absent: it is fetched only when a reader picks that system,
 // which system.spec.js asserts from the other side.
 const PACKAGE_PAGE_FILES = [
-  "history/ri.json",
-  "meta/ri.json",
-  "revdeps/ri.json",
+  "history/pkgs/ri.json",
+  "meta/pkgs/ri.json",
+  "revdeps/pkgs/ri.json",
   "revisions.json",
   "stats.json",
   "systems.json",
-  "versions/ri.json",
+  "versions/pkgs/ri.json",
 ];
 
 // Every same-origin JSON file the page asked for while `run` was executing,
@@ -58,6 +58,20 @@ test("a package page asks for exactly the files it renders", async ({
     await expect(page.locator(".row.cols-ver").first()).toBeVisible();
   });
   expect(asked).toEqual(PACKAGE_PAGE_FILES);
+});
+
+test("a nested package loads child-prefix shards under its parent set", async ({
+  page,
+}) => {
+  const asked = await jsonRequests(page, async () => {
+    await page.goto("/?pkg=jetbrains.idea");
+    await expect(page.locator(".row.cols-ver").first()).toBeVisible();
+  });
+  expect(asked).toEqual(
+    PACKAGE_PAGE_FILES.map((path) =>
+      path.replace("pkgs/ri.json", "pkgs/jetbrains/id.json"),
+    ),
+  );
 });
 
 test("a package page does not pull the graph library", async ({ page }) => {

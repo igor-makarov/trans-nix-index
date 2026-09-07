@@ -53,8 +53,19 @@
         python3 ${../tests/snapshot.py} source | tee $out
       '';
   site-data = pkgs.runCommand "check-site-data" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-    python3 ${../tests/site-data.py} ${../tools/build-site-data.py} | tee $out
+    python3 ${../tests/site-data.py} ${../tools}/build-site-data.py | tee $out
   '';
+  shard-paths =
+    pkgs.runCommand "check-shard-paths"
+      {
+        nativeBuildInputs = [
+          pkgs.python3
+          pkgs.nodejs
+        ];
+      }
+      ''
+        python3 ${../tests/shard-paths.py} ${../tools} ${../site/js/shard-path.js} | tee $out
+      '';
   update-plan = pkgs.runCommand "check-update-plan" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 ${../tests/update-plan.py} ${../tools/update-plan.py} | tee $out
   '';

@@ -5,6 +5,7 @@
 import { useState, useEffect } from "htm/preact";
 
 import { HTTP_NOT_FOUND, SHARD_ERROR } from "./config.js";
+import { shardKey } from "./shard-path.js";
 
 export const fetchJson = (f) =>
   fetch(f).then((r) => {
@@ -16,8 +17,8 @@ export const fetchJson = (f) =>
  *
  * versions.json is 5.3 MB and history.json is 8 MB, and a package page is
  * about one attribute out of each, so the site build splits both by the first
- * two characters of the attribute name and this fetches the one shard of
- * each. Median shard is 1.4 KB of versions and 2 KB of history.
+ * two characters of the leaf name, beneath pkgs/<parent attributes>/.
+ * This fetches the one shard of each needed for the selected package.
  *
  * That is what makes a package URL cheap enough to be worth indexing: the
  * whole page used to wait on the 5.3 MB index before it could draw a row.
@@ -37,14 +38,9 @@ export const Shard = {
   REVDEPS: "revdeps",
 };
 
-const shardOf = (attr) =>
-  [...attr.slice(0, 2).toLowerCase()]
-    .map((c) => (/[a-z0-9]/.test(c) ? c : "_"))
-    .join("") || "_";
-
 const shardCache = new Map();
 function loadShard(dir, attr) {
-  const path = `${dir}/${shardOf(attr)}.json`;
+  const path = `${dir}/${shardKey(attr)}.json`;
   if (!shardCache.has(path)) {
     shardCache.set(
       path,

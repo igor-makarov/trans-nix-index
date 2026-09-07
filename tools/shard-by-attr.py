@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Split an {"attrs": {...}} index file into per-attribute-prefix shards.
 
-Sharded by the first two characters of the attribute name, so a package page
+Sharded under pkgs/<parent attributes>/ by the first two characters of the
+final attribute name, so a package page
 fetches only the shard holding the one attribute it is about. history.json and
 versions.json have the same shape and both go through here.
 
@@ -11,15 +12,16 @@ render one package would cost more than every other request on the page
 combined. Two characters puts the median history shard at 2 KB and the median
 versions shard at 1.4 KB.
 
-Build artifacts rather than committed data: the repo keeps the two files
-multiverse.nix reads, and the deploy gets the pieces. That also means the split
-can be retuned without a data commit.
+Build artifacts rather than snapshot members: the snapshot keeps the complete
+files, and the deploy gets the pieces. Splitting does not alter the snapshot.
 
     shard-by-attr.py <src.json> <dest-dir>
 """
 import json
 import os
 import sys
+
+from shard_paths import shard_key
 
 src, dest = sys.argv[1:3]
 data = json.load(open(src))
@@ -31,12 +33,11 @@ common = {k: v for k, v in data.items() if k != "attrs"}
 
 buckets = {}
 for attr, vers in data["attrs"].items():
-    # Anything not alphanumeric folds to _, so the shard name is always a safe
-    # filename and the site can compute it with the same one-liner.
-    key = "".join(c if c.isalnum() else "_" for c in attr[:2].lower()) or "_"
+    key = shard_key(attr)
     buckets.setdefault(key, {})[attr] = vers
 
 for key, attrs in buckets.items():
+    os.makedirs(os.path.dirname(os.path.join(dest, key + ".json")), exist_ok=True)
     json.dump(
         {**common, "attrs": attrs},
         open(os.path.join(dest, key + ".json"), "w"),

@@ -34,6 +34,8 @@ import struct
 import sys
 from collections import defaultdict
 
+from shard_paths import shard_key
+
 # Multi-output suffixes recognised when resolving a reference like
 # ffmpeg-7.1-lib back to the indexed ffmpeg 7.1.
 OUTPUT_SUFFIXES = {
@@ -75,10 +77,6 @@ load = lambda p: json.load(open(p))
 def dump(obj, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     json.dump(obj, open(path, "w"), separators=(",", ":"), sort_keys=True)
-
-
-def shard_key(attr):
-    return "".join(c if c.isalnum() else "_" for c in attr[:2].lower()) or "_"
 
 
 class DiskMap:

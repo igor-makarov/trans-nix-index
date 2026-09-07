@@ -15,5 +15,5 @@ pkgs.runCommand "nixpkgs-multiverse-store-data"
     cp ${pkgs.multiverse-index}/revisions.json "$root/revisions.json"
     cp ${pkgs.multiverse-index}/versions.json "$root/index/versions.json"
     cp ${pkgs.multiverse-index}/history.json "$root/index/history.json"
-    python3 ${../tools/build-site-data.py} "$root" ${pkgs.multiverse-data} $out
+    python3 ${../tools}/build-site-data.py "$root" ${pkgs.multiverse-data} $out
   ''

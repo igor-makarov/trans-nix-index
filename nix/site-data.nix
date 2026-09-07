@@ -29,8 +29,8 @@ pkgs.runCommand "nixpkgs-multiverse-site-data"
     python3 ${../tools/close-tip.py} ${pkgs.multiverse-index}/versions.json versions.json
     python3 ${../tools/close-tip.py} ${pkgs.multiverse-index}/history.json history.json
 
-    python3 ${../tools/shard-by-attr.py} history.json $out/history
-    python3 ${../tools/shard-by-attr.py} versions.json $out/versions
+    python3 ${../tools}/shard-by-attr.py history.json $out/history
+    python3 ${../tools}/shard-by-attr.py versions.json $out/versions
     python3 ${../tools/attr-names.py} versions.json $out/names.json
 
     # Copy pre-rendered documentation from docs.nix

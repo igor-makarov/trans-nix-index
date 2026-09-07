@@ -13,7 +13,11 @@ with tempfile.TemporaryDirectory() as temporary:
     data.mkdir()
     out = root / "site"
     target = "a" * 32
-    names = {"hello": target, **{f"a{i:03}": f"{i:032x}" for i in range(301)}}
+    names = {
+        "foo.bar.hello": target,
+        "jetbrains.idea": "b" * 32,
+        **{f"a{i:03}": f"{i:032x}" for i in range(301)},
+    }
 
     def put(path, value):
         path.write_text(json.dumps(value))
@@ -41,18 +45,39 @@ with tempfile.TemporaryDirectory() as temporary:
     )
     put(
         data / "refs-indexed.json",
-        {d: [target + "-hello-1"] * 2 for a, d in names.items() if a != "hello"},
+        {
+            d: [target + "-foo.bar.hello-1"] * 2
+            for a, d in names.items()
+            if a != "foo.bar.hello"
+        },
     )
     put(data / "closures.json", {d: [100, 1, 0] for d in names.values()})
     put(data / "outs-indexed.json", {})
+    for stem in ["outpaths", "tip-outpaths"]:
+        (data / f"{stem}-aarch64-linux.json").write_bytes(
+            (data / f"{stem}-x86_64-linux.json").read_bytes()
+        )
     subprocess.run(["python3", sys.argv[1], str(root), str(data), str(out)], check=True)
-    dependencies = json.loads((out / "revdeps/he.json").read_text())["attrs"]["hello"][
-        "1"
-    ]
-    assert dependencies["c"] == 301
+    for directory in ["meta", "meta-aarch64-linux"]:
+        assert (
+            "jetbrains.idea"
+            in json.loads((out / directory / "pkgs/jetbrains/id.json").read_text())[
+                "attrs"
+            ]
+        )
+    assert (
+        "foo.bar.hello"
+        in json.loads((out / "revdeps-aarch64-linux/pkgs/foo/bar/he.json").read_text())[
+            "attrs"
+        ]
+    )
+    dependencies = json.loads((out / "revdeps/pkgs/foo/bar/he.json").read_text())[
+        "attrs"
+    ]["foo.bar.hello"]["1"]
+    assert dependencies["c"] == 302
     assert dependencies["l"] == [[f"a{i:03}", "1"] for i in range(200)]
     assert (
-        json.loads((out / "meta/a0.json").read_text())["attrs"]["a000"]["1"]["ns"]
+        json.loads((out / "meta/pkgs/a0.json").read_text())["attrs"]["a000"]["1"]["ns"]
         == 100
     )
 print(

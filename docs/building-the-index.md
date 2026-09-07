@@ -36,6 +36,26 @@ All artifacts are local files inside that snapshot; no upstream release download
 Pass `--tag <registry-tag>` or `--digest sha256:<digest>` to `scripts/ci/pages` to replay a snapshot.
 Generated files stay under ignored `_ci/` and `_site/` directories.
 
+## Browser shard layout
+
+The site build splits versions, history, metadata, and reverse dependencies
+under a conventional `pkgs/` root. Parent attribute names become directories;
+the final name's first two characters select the shard:
+
+```text
+versions/pkgs/fi.json                         # firefox
+versions/pkgs/jetbrains/id.json               # jetbrains.idea
+versions/pkgs/foo/bar/pa.json                 # foo.bar.package (illustrative)
+```
+
+The same layout applies under `history/`, `meta/`, `revdeps/`, and the
+`meta-<system>/` and `revdeps-<system>/` directories. JSON keys retain their full
+dotted attribute names, without an added `pkgs.` prefix. Arbitrary directory
+depth is supported, but this does not expand which package sets are indexed.
+Unsafe filename characters fold to underscores; any collisions group attributes
+in one shard without changing their distinct JSON keys.
+Hash-prefix `identify/` shards and complete snapshot datasets are unchanged.
+
 ## Incremental generation
 
 [The updater](../scripts/ci/update) restores the latest snapshot into `_ci/work`,
