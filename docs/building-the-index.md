@@ -25,7 +25,7 @@ Open `http://127.0.0.1:8000` while the server is running.
 
 ## Snapshot-based builds
 
-[The resolver](../tools/resolve-data.py) resolves GitHub's latest release once,
+[The resolver](../tools/resolve-data.py) resolves the GHCR `latest` tag once to an immutable OCI digest,
 downloads the self-contained `data.tar.gz`, verifies its SHA-256 digest, and unpacks
 the index, store-data artifacts, crawl state, and per-file checksum manifest.
 [Validation](../tools/validate-data.py) checks that revision offsets and histories agree.
@@ -33,7 +33,7 @@ the index, store-data artifacts, crawl state, and per-file checksum manifest.
 There is no mutable network lookup inside Nix evaluation and no historical extraction during a site build.
 All artifacts are local files inside that snapshot; no upstream release downloads occur.
 
-Pass `--tag data-seed-5fed5dc8b395-v2` to `scripts/ci/pages` to replay the initial complete snapshot.
+Pass `--tag <registry-tag>` or `--digest sha256:<digest>` to `scripts/ci/pages` to replay a snapshot.
 Generated files stay under ignored `_ci/` and `_site/` directories.
 
 ## Incremental generation
@@ -49,9 +49,9 @@ Census regenerates availability artifacts and publishes a complete snapshot with
 
 ## Recovery
 
-Restore any complete release of ours by passing `--tag <tag>` to `scripts/ci/pages`
-or `scripts/ci/update`. Updates from an older tag publish a new complete snapshot;
-they do not modify the older release.
+Restore any complete OCI snapshot of ours by passing `--tag <tag>` or
+`--digest sha256:<digest>` to `scripts/ci/pages` or `scripts/ci/update`.
+Updates from an older snapshot publish a new complete snapshot; they do not modify the old one.
 
 For manual emergency reseeding from upstream's latest:
 
@@ -63,8 +63,10 @@ mise run nix -- develop --command python3 tools/import-seed.py _ci/emergency-see
 imports its coherent JSON and hash-pinned artifacts, and verifies the crawl graph's
 release-asset digest. It writes a self-contained snapshot directory and
 `_ci/emergency-seed.tar.gz`. The destination must not already exist.
-Review and test it before uploading it as `data.tar.gz` to a new draft release;
-publish and mark latest only after the upload succeeds. No workflow automatically reseeds.
+Review and test it before publishing. Rename the archive to `data.tar.gz`, then use
+[the OCI publisher](../tools/publish-oci.py) with that path and a new registry tag.
+It verifies the uploaded descriptor before advancing `latest`. Publishing requires
+GHCR credentials with package-write access. No workflow automatically reseeds.
 
 Rebuilding all history from original nixpkgs/NixOS sources is theoretically possible,
 but a supported from-scratch bootstrap is deliberately out of scope.

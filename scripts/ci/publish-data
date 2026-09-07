@@ -2,7 +2,6 @@
 set -euo pipefail
 : "${GITHUB_REPOSITORY:?Set the destination repository}"
 : "${MULTIVERSE_ROOT:?Run update or census first}"
-export GH_REPO="$GITHUB_REPOSITORY"
 id="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%d%H%M%S)}-${GITHUB_RUN_ATTEMPT:-1}"
 work="$MULTIVERSE_ROOT/index/.outpaths"
 rm -rf _ci/publish
@@ -31,9 +30,6 @@ PY
 fi
 python3 tools/snapshot.py _ci/publish _ci/data.tar.gz
 python3 tools/validate-data.py _ci/publish
-# Drafts are not discoverable through releases/latest until the upload succeeds.
-tag="data-$id"
-gh release create "$tag" --target "${GITHUB_SHA:-main}" --draft \
-  --title "Complete data snapshot $id" --notes 'Self-contained index, store data, and crawl state. No earlier release or upstream data assets required.'
-gh release upload "$tag" _ci/data.tar.gz
-gh release edit "$tag" --draft=false --latest
+# OCI publishes the manifest only after its blob upload succeeds. Advance
+# latest only after reading back and verifying that manifest's archive digest.
+python3 tools/publish-oci.py _ci/data.tar.gz "data-$id"

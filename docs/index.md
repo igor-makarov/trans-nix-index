@@ -7,6 +7,6 @@ Package-selection examples refer to the [upstream project](https://github.com/fz
 1. [Building the index](./building-the-index.md)
 2. [CI and publication](./ci.md)
 
-Generated JSON and crawl state live in [GitHub releases](https://github.com/igor-makarov/trans-nix-index/releases), never in Git.
+Generated JSON and crawl state live in [GHCR snapshots](https://github.com/users/igor-makarov/packages/container/package/trans-nix-index-data), never in Git.
 The initial snapshot was seeded from upstream commit `5fed5dc8b395225a076ceca9cb451854f9566af5`.
 Subsequent updates extend our latest successfully published snapshot.

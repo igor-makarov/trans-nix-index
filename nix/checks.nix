@@ -53,6 +53,9 @@
   update-plan = pkgs.runCommand "check-update-plan" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 ${../tests/update-plan.py} ${../tools/update-plan.py} | tee $out
   '';
+  oci = pkgs.runCommand "check-oci" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    python3 ${../tests/oci.py} ${../tools} | tee $out
+  '';
   docs-links = pkgs.runCommand "check-docs-links" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     mkdir -p repo/docs repo/nix repo/tools repo/scripts/ci
     cp ${../docs}/*.md repo/docs/

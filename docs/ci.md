@@ -1,18 +1,18 @@
 # CI and publication
 
-No workflow commits or pushes source changes. All jobs use `ubuntu-24.04-arm`,
-`actions/checkout@v7`, `jdx/mise-action@v4`, and the repository's Docker Nix wrapper.
-The build-toolchain revision is deliberately pinned in source configuration.
+No workflow commits, pushes, or creates Git tags or GitHub Releases. All Nix jobs
+use `ubuntu-24.04-arm`, `actions/checkout@v7`, `jdx/mise-action@v4`, and the
+repository's Docker Nix wrapper. The build toolchain is pinned in source.
 
-- **ci:** formatting, extraction/merge/liveness tests, generated-data exclusion, site build, browser tests.
+- **ci:** formatting, extraction/merge/liveness/OCI tests, generated-data exclusion, site build, browser tests.
 - **update-index:** hourly change detection against our latest snapshot. No changes means no evaluation, crawl, publication, or Pages build. Release-channel-only changes reuse existing index/store data; new revisions or stale store coverage trigger incremental work.
 - **census:** weekly availability checks, publishing a complete snapshot with refreshed availability artifacts.
-- **pages:** builds and tests one published snapshot, then deploys; runs after successful updates or site-source changes.
+- **pages:** builds and tests one published snapshot, then deploys after a successful publication or site-source change.
 
-## Release layout
+## Snapshot layout
 
-Each `data-<run-id>-<attempt>` release has one self-contained `data.tar.gz` asset.
-Pages checks for that run's published release before starting a data-triggered build:
+Snapshots are public OCI artifacts in `ghcr.io/igor-makarov/trans-nix-index-data`.
+Each `data-<run-id>-<attempt>` registry tag holds one self-contained `data.tar.gz`:
 
 - Index JSON: versions, history, stats, revisions, and releases.
 - `artifacts/`: all store-data files consumed by the site.
@@ -20,19 +20,25 @@ Pages checks for that run's published release before starting a data-triggered b
 - `manifest.json`: schema version and SHA-256 checksums of every payload file.
 
 All working data and archive members are plain JSON/JSONL. Compression happens
-only when creating the outer `data.tar.gz`; there are no nested compressed files.
+only when creating the outer archive. No older snapshots or upstream assets are referenced.
+The latest complete snapshot alone is sufficient for an incremental update.
+Older snapshot tags are rollback points; manifest digests identify immutable contents.
 
-No upstream assets or older releases are referenced. The latest successful release alone
-is sufficient for an incremental update. Older complete releases are rollback points.
-The initial archive is approximately 1 GB; GitHub's per-asset limit is 2 GiB.
+ORAS uploads the archive blob before publishing its OCI manifest. The publisher
+verifies the manifest's archive digest before advancing the `latest` registry tag.
+Consumers resolve a tag once and then read only by digest, verifying the layer's
+checksum and the archive's internal manifest. Pages checks whether the triggering
+run published its registry tag before starting a data-triggered build.
+Updater and census share a concurrency group to serialize publications.
 
-Each release stays draft until every required upload succeeds. Only then is it published and marked latest.
-Failed generation leaves the previous complete snapshot available. The next run starts from that snapshot, not the initial seed.
-Updater and census share a concurrency group because they both modify crawl state.
+## Permissions and automation
 
-## Enabling automation
+Publishers use `GITHUB_TOKEN` with `packages: write` and `contents: read`.
+The OCI source annotation associates the package with this repository. The GHCR
+package must remain public for anonymous downloads and pull-request site builds.
+Registry credentials are temporary and never included in the snapshot.
 
-First publish a coherent snapshot and successfully deploy Pages. Then set repository variables
-`ENABLE_PAGES=true` and `ENABLE_SCHEDULES=true`. Manual dispatch works before those gates are enabled.
-Configure GitHub Pages to deploy through GitHub Actions. Only release publishers need `contents: write`;
-Pages additionally needs `pages: write` and `id-token: write`.
+After a successful initial publication and deployment, set repository variables
+`ENABLE_PAGES=true` and `ENABLE_SCHEDULES=true`. Manual dispatch bypasses those gates.
+GitHub Pages deploys through Actions and additionally needs `pages: write` and
+`id-token: write`. Public Nix binary-cache downloads require no account or key.
