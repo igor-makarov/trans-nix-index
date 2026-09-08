@@ -20,6 +20,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: main
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/setup-nix
       - name: Restore, census every published system, and publish observations
         run: mise run nix -- develop --command bash scripts/ci/census

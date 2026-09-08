@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/setup-nix
       - name: Formatting
         run: mise run nix -- fmt -- --ci
       - name: Data pipeline and tooling tests
