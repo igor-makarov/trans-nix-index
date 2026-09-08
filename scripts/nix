@@ -56,7 +56,7 @@ docker run --rm --init --name "$name" \
   --env GH_TOKEN --env GITHUB_TOKEN --env GITHUB_REPOSITORY --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT --env GITHUB_SHA --env GITHUB_ACTOR \
   --env EVAL_WORKERS --env EVAL_MAXMEM \
   --env 'NIX_CONFIG=experimental-features = nix-command flakes
-sandbox = false' \
+sandbox = true' \
   --entrypoint /bin/sh nixos/nix:latest -c '
     parent=$$
     (
