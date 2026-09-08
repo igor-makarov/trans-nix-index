@@ -5,8 +5,9 @@ source scripts/ci/cachix
 cache_pull "$PIPELINE_RESULT"
 python3 tools/validate-data.py "$PIPELINE_RESULT/snapshot"
 hash=$(nix hash path --sri "$PIPELINE_RESULT/snapshot")
+roots=$(mktemp -d "$PWD/_ci/pure/pages-roots.XXXXXXXX")
 site=$(nix build --file nix/site-build.nix --argstr snapshot "$PIPELINE_RESULT/snapshot" \
-  --argstr snapshotHash "$hash" --no-link --print-out-paths -L)
+  --argstr snapshotHash "$hash" --out-link "$roots/result" --print-out-paths -L)
 cache_push "$site"
 rm -rf _site
 mkdir _site

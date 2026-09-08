@@ -14,12 +14,16 @@ One `pure-index` workflow contains the entire graph:
    trees. The manifest and revision plan are a GitHub run artifact. Fresh trials
    select up to 100 recent revisions as a complete trial dataset.
 2. **revisions** is a matrix of up to 256 shards, not one job per revision.
-   Revisions are distributed round-robin. Each shard submits all cache-missing
+   Discovery persists a shuffled revision plan, distributed round-robin for
+   balanced random shard assignment. Shards shuffle their queues and extraction
+   lane targets independently; Nix still controls dependency scheduling.
+   Each shard submits all cache-missing
    revisions to separate extraction lanes: three output evaluations and one
    version extraction concurrently, then up to four cheap combiners. GitHub manages runner capacity.
    The current utilization trial explicitly uses `--shards 10`; the partitioner
    default remains 256.
-   Every revision is still an independent Nix derivation.
+   Every revision is still an independent Nix derivation. Instantiated recipes,
+   downloaded inputs, and built outputs are GC-rooted through publication.
 3. **merge** depends on all shards succeeding and folds their Cachix outputs
    into the version index, history, and statistics. No live availability probes.
 4. **observe** optionally performs channel membership, narinfo, reference-graph,

@@ -84,6 +84,8 @@ with tempfile.TemporaryDirectory() as tmp:
                 build.assert_not_called()
             else:
                 build.assert_called_once()
+                instantiate = evaluate.call_args_list[1].args[0]
+                assert "--add-root" in instantiate and "--indirect" in instantiate
                 assert build.call_args.args[0] == [
                     "bash",
                     "scripts/ci/build-shard",
@@ -98,6 +100,27 @@ with tempfile.TemporaryDirectory() as tmp:
             }
         )
     )
+    original = json.loads(plan.read_text())["include"]
+    output = Path(tmp) / "github-output"
+    with (
+        patch.object(
+            sys, "argv", ["revision-shards", "plan", str(plan), "--shards", "2"]
+        ),
+        patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}),
+        patch.object(
+            m.random.SystemRandom, "shuffle", side_effect=lambda rows: rows.reverse()
+        ),
+    ):
+        m.main()
+    shuffled = m.rows_from(json.loads(plan.read_text()))
+    assert shuffled == list(reversed(original))
+    assert json.loads(output.read_text().removeprefix("matrix=")) == m.matrix(
+        shuffled, 2
+    )
+    assert m.assigned(shuffled, 0, 2) != m.assigned(original, 0, 2)
+    assert sorted(
+        r["rev"] for i in range(2) for r in m.assigned(shuffled, i, 2)
+    ) == sorted(r["rev"] for r in original)
     with (
         patch.object(
             sys, "argv", ["revision-shards", "build", str(plan), "--shards", "2"]

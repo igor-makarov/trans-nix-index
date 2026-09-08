@@ -5,7 +5,9 @@ import json
 import os
 from pathlib import Path
 import re
+import random
 import subprocess
+import tempfile
 
 
 def rows_from(plan):
@@ -98,6 +100,9 @@ def main():
     args = parser.parse_args()
     rows = rows_from(json.loads(args.plan.read_text()))
     if args.command == "plan":
+        # Persist once: every runner must partition the same shuffled sequence.
+        random.SystemRandom().shuffle(rows)
+        args.plan.write_text(json.dumps({"include": rows}, indent=2) + "\n")
         with open(os.environ["GITHUB_OUTPUT"], "a") as out:
             out.write(
                 "matrix="
@@ -106,7 +111,12 @@ def main():
             )
         return
     missing = []
-    for row in assigned(rows, int(os.environ["PIPELINE_SHARD"]), args.shards):
+    queue = assigned(rows, int(os.environ["PIPELINE_SHARD"]), args.shards)
+    random.SystemRandom().shuffle(queue)
+    roots = Path(
+        tempfile.mkdtemp(prefix="revision-roots.", dir=args.plan.parent)
+    ).resolve()
+    for row in queue:
         path = subprocess.check_output(
             [
                 "nix",
@@ -140,10 +150,13 @@ def main():
                 row["rev"],
                 "-A",
                 "all",
+                "--add-root",
+                str(roots / row["rev"]),
+                "--indirect",
             ],
             text=True,
         ).strip()
-        missing.append(drv)
+        missing.append(os.path.realpath(drv))
     if missing:
         subprocess.run(["bash", "scripts/ci/build-shard", *missing], check=True)
 

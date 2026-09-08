@@ -14,5 +14,8 @@ cache_pull() {
     /nix/store/*) ;;
     *) echo 'Expected a Nix store path' >&2; return 1 ;;
   esac
-  nix-store --realise "$1" >/dev/null
+  mkdir -p _ci/pure
+  local roots
+  roots=$(mktemp -d "$PWD/_ci/pure/pull-roots.XXXXXXXX")
+  nix-store --realise "$1" --add-root "$roots/result" --indirect >/dev/null
 }

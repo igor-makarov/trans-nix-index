@@ -2,6 +2,7 @@
 """Partition actual revision derivation dependencies into extraction lanes."""
 from pathlib import Path
 import sys
+import random
 
 from importlib.util import module_from_spec, spec_from_file_location
 
@@ -37,4 +38,6 @@ if __name__ == "__main__":
     dependencies = nix.show({p for r in recipes.values() for p in nix.dependencies(r)})
     heavy, light = lanes(recipes, dependencies)
     for name, paths in (("heavy", heavy), ("light", light)):
-        (root / name).write_text("".join(p + "^*\n" for p in sorted(paths)))
+        queue = sorted(paths)
+        random.SystemRandom().shuffle(queue)
+        (root / name).write_text("".join(p + "^*\n" for p in queue))
