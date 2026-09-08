@@ -69,6 +69,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 mkdir -p "$PATHS" "$DATA" "$EVAL"
+# Time stages without changing their arguments, stdout, or exit status.
+stage() {
+  local start=$SECONDS status=0
+  "$@" || status=$?
+  printf '%s\t%s\t%s\n' "$2" "$((SECONDS - start))" "$status" >> "$WORK/timings.tsv"
+  return "$status"
+}
 
 # 1. Channel listings not fetched yet. A full run wants all of them; an
 #    incremental run only consults listings at or past the previous artifacts'
@@ -93,7 +100,7 @@ count = json.load(open("'"$PREV"'"))["revisionCount"]
 print(max(0, count - 1))
 ')
 fi
-python3 "$HERE/fetch-store-paths.py" \
+stage python3 "$HERE/fetch-store-paths.py" \
   --revisions "$MT/revisions.json" --outdir "$PATHS" --min-offset "$MINOFF"
 
 # 2. Evaluate the revisions the join will need. A full run wants every
@@ -141,12 +148,11 @@ PREV_ARG=()
 if [ "$MODE" = incremental ] && [ -d "$DATA/prev" ]; then
   PREV_ARG=(--prev-dir "$DATA/prev")
 fi
-for system in ${SYSTEMS//,/ }; do
-  python3 "$HERE/join-eval-listing.py" \
-    --revisions "$MT/revisions.json" --versions "$MT/index/versions.json" \
-    --eval-dir "$EVAL" --paths-dir "$PATHS" --system "$system" \
-    --out-dir "$DATA" --probe-cache "${PREV_ARG[@]}"
-done
+stage python3 "$HERE/join-eval-listing.py" \
+  --revisions "$MT/revisions.json" --versions "$MT/index/versions.json" \
+  --eval-dir "$EVAL" --paths-dir "$PATHS" --systems "$SYSTEMS" \
+  --threads "${ENRICH_PROBE_THREADS:-256}" \
+  --out-dir "$DATA" --graph "$GRAPH" --probe-cache "${PREV_ARG[@]}"
 
 # Every system's artifacts, as the crawl and consolidation seeds: the graph
 # describes digests, and a digest is a digest whichever system evaluated it.
@@ -159,7 +165,8 @@ done
 #    versions and their transitive references. A runner that restored no graph
 #    re-crawls all of them, which is minutes — the graph carries fetched
 #    records only, so there is nothing else to start from.
-python3 "$HERE/crawl-narinfos.py" --seeds "${SEEDS[@]}" --graph "$GRAPH"
+stage python3 "$HERE/crawl-narinfos.py" --seeds "${SEEDS[@]}" --graph "$GRAPH" \
+  --threads "${ENRICH_CRAWL_THREADS:-64}"
 
 # 5. Consolidate the graph into the three artifact files. The previously
 #    published copies (restored into $DATA/prev-shards by the workflow) are the
@@ -173,7 +180,7 @@ if [ -d "$DATA/prev-shards" ]; then
   EXTRA="$EXTRA --prev-dir $DATA/prev-shards"
 fi
 # shellcheck disable=SC2086
-python3 "$HERE/consolidate-outpaths.py" \
+stage python3 "$HERE/consolidate-outpaths.py" \
   --seeds "${SEEDS[@]}" \
   --graph "$GRAPH" $EXTRA --out-dir "$DATA"
 
@@ -186,7 +193,7 @@ if [ -s "$DATA/prev-shards/outs-indexed.json" ]; then
   PREV_OUTS="--prev $DATA/prev-shards/outs-indexed.json"
 fi
 # shellcheck disable=SC2086
-python3 "$HERE/extract-outputs.py" \
+stage python3 "$HERE/extract-outputs.py" \
   --seeds "${SEEDS[@]}" \
   --graph "$GRAPH" $PREV_OUTS --out "$DATA/outs-indexed.json"
 

@@ -89,6 +89,13 @@ jobs:
       - uses: ./.github/actions/setup-nix
       - name: Skip cached revisions; build and publish missing ones
         run: python3 tools/monitor-runner.py _ci/pure/metrics/runner.jsonl mise run nix -- develop --command python3 tools/revision-shards.py build _ci/pure/inputs/matrix.json --shards 10
+      - name: Publish revision output receipts
+        uses: actions/upload-artifact@v7
+        with:
+          name: revision-paths-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: _ci/pure/inputs/revision-paths/
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload runner utilization
         if: always()
         uses: actions/upload-artifact@v7
@@ -114,13 +121,19 @@ jobs:
           merge-multiple: true
           path: _ci/pure/inputs
       - uses: ./.github/actions/setup-nix
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: revision-paths-${{ github.run_attempt }}-*
+          merge-multiple: true
+          path: _ci/pure/inputs/revision-paths
       - name: Merge cached revisions
         run: mise run nix -- develop --command bash scripts/ci/merge-pure
       - id: result
         run: |
           echo "path=$(cat _ci/pure/result-path)" >> "$GITHUB_OUTPUT"
           echo "Pure Cachix result — $(cat _ci/pure/result-path)" >> "$GITHUB_STEP_SUMMARY"
-  observe:
+  enrich:
+    name: Enrich cache metadata
     needs: merge
     if: inputs.enrich
     runs-on: ubuntu-24.04-arm
@@ -137,14 +150,15 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-nix
-      - name: Observe cache and optionally census payloads
+      - name: Enrich cache metadata and optionally census payloads
         run: mise run nix -- develop --command bash scripts/ci/enrich-pure
       - id: result
         run: |
           echo "path=$(cat _ci/pure/result-path)" >> "$GITHUB_OUTPUT"
           echo "Enriched Cachix result — $(cat _ci/pure/result-path)" >> "$GITHUB_STEP_SUMMARY"
   pages:
-    needs: observe
+    needs: enrich
+    if: inputs.deploy
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     permissions:
@@ -159,7 +173,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     env:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      PIPELINE_RESULT: ${{ needs.observe.outputs.result }}
+      PIPELINE_RESULT: ${{ needs.enrich.outputs.result }}
     steps:
       - uses: actions/checkout@v7
         with:

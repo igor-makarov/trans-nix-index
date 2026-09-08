@@ -13,7 +13,7 @@ let
     cp -r ${data}/. "$out/"
     chmod -R u+w "$out"
     python3 ${../tools/snapshot.py} "$out" snapshot.tar.gz
-    python3 ${../tools/validate-data.py} "$out"
+    python3 ${../tools}/validate-data.py "$out"
   '';
 in
 pkgs.linkFarm "enriched-index-pipeline" [

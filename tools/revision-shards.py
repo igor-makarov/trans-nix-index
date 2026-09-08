@@ -111,6 +111,7 @@ def main():
             )
         return
     missing = []
+    outputs = {}
     queue = assigned(rows, int(os.environ["PIPELINE_SHARD"]), args.shards)
     random.SystemRandom().shuffle(queue)
     roots = Path(
@@ -134,6 +135,7 @@ def main():
             ],
             text=True,
         ).strip()
+        outputs[row["rev"]] = path
         if cached(path):
             print(f"Cached; skipping {row['name']}: {path}", flush=True)
             continue
@@ -159,6 +161,11 @@ def main():
         missing.append(os.path.realpath(drv))
     if missing:
         subprocess.run(["bash", "scripts/ci/build-shard", *missing], check=True)
+    destination = args.plan.parent / "revision-paths"
+    destination.mkdir(exist_ok=True)
+    (destination / (os.environ["PIPELINE_SHARD"] + ".json")).write_text(
+        json.dumps(outputs, sort_keys=True) + "\n"
+    )
 
 
 if __name__ == "__main__":

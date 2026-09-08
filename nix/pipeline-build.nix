@@ -8,4 +8,8 @@ let
   manifest = builtins.fromJSON (builtins.readFile (bundle + "/manifest.json"));
   pkgs = import ./pkgs.nix { inherit system; };
 in
-import ./pipeline.nix { inherit pkgs manifest; }
+import ./pipeline.nix {
+  inherit pkgs manifest;
+  # Required at the CI boundary: never reconstruct revision extraction recipes.
+  revisionFiles = builtins.fromJSON (builtins.readFile (bundle + "/revision-files.json"));
+}

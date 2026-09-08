@@ -2,6 +2,7 @@
 {
   pkgs,
   manifest,
+  revisionFiles ? null,
   sourceFor ? (
     revision:
     (builtins.fetchTree {
@@ -37,7 +38,11 @@ let
         builtins.listToAttrs (
           map (r: {
             name = r.rev;
-            value = perRevision.${r.name}.all;
+            value =
+              if revisionFiles == null then
+                perRevision.${r.name}.all
+              else
+                builtins.storePath revisionFiles.${r.rev};
           }) revisions
         )
       )
@@ -68,6 +73,9 @@ let
 in
 assert manifest.schema == 1;
 assert revisions != [ ];
+assert
+  revisionFiles == null
+  || builtins.attrNames revisionFiles == builtins.sort builtins.lessThan (map (r: r.rev) revisions);
 assert systems != [ ];
 assert builtins.length (pkgs.lib.unique (map (r: r.rev) revisions)) == builtins.length revisions;
 assert builtins.length (pkgs.lib.unique (map (r: r.name) revisions)) == builtins.length revisions;

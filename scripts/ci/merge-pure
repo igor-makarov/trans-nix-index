@@ -4,6 +4,7 @@ source scripts/ci/cachix
 PIPELINE_INPUTS="$PWD/_ci/pure/inputs"
 test -f "$PIPELINE_INPUTS/manifest.json"
 roots=$(mktemp -d "$PWD/_ci/pure/merge-roots.XXXXXXXX")
+python3 tools/prepare-revision-paths.py "$PIPELINE_INPUTS" "$roots/revisions"
 nix-instantiate nix/pipeline-build.nix --argstr inputs "$PIPELINE_INPUTS" \
   -A all --add-root "$roots/derivation" >/dev/null
 drv=$(readlink -f "$roots/derivation")

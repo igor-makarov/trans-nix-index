@@ -3,10 +3,11 @@ set -euo pipefail
 source scripts/ci/cachix
 : "${PIPELINE_RESULT:?Pass the exact merged/enriched result from this run}"
 cache_pull "$PIPELINE_RESULT"
-python3 tools/validate-data.py "$PIPELINE_RESULT/snapshot"
-hash=$(nix hash path --sri "$PIPELINE_RESULT/snapshot")
+snapshot=$(readlink -f "$PIPELINE_RESULT/snapshot")
+python3 tools/validate-data.py "$snapshot"
+hash=$(nix hash path --sri "$snapshot")
 roots=$(mktemp -d "$PWD/_ci/pure/pages-roots.XXXXXXXX")
-site=$(nix build --file nix/site-build.nix --argstr snapshot "$PIPELINE_RESULT/snapshot" \
+site=$(nix build --file nix/site-build.nix --argstr snapshot "$snapshot" \
   --argstr snapshotHash "$hash" --out-link "$roots/result" --print-out-paths -L)
 cache_push "$site"
 rm -rf _site

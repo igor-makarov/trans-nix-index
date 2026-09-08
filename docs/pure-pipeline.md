@@ -24,13 +24,26 @@ One `pure-index` workflow contains the entire graph:
    default remains 256.
    Every revision is still an independent Nix derivation. Instantiated recipes,
    downloaded inputs, and built outputs are GC-rooted through publication.
-3. **merge** depends on all shards succeeding and folds their Cachix outputs
-   into the version index, history, and statistics. No live availability probes.
-4. **observe** optionally performs channel membership, narinfo, reference-graph,
+3. **merge** depends on all shards succeeding. Each shard publishes a small
+   GitHub artifact mapping revision SHAs to final JSON store paths. Merge
+   validates exact manifest coverage, downloads and roots those cached inputs
+   with builds disabled, then folds them into the version index, history, and
+   statistics. It never reconstructs extraction recipes or fetches their nixpkgs
+   source trees. No live availability probes.
+4. **enrich** optionally performs channel membership, narinfo, reference-graph,
    and closure observation. Optional census uses `scripts/ci/observe-census`,
    also shared by the legacy workflow.
-5. **pages** builds and browser-tests the enriched snapshot; deployment requires
-   an explicit switch.
+5. **pages** runs only when deployment is explicitly requested; it builds and
+   browser-tests the enriched snapshot before deploying.
+
+Enrichment availability checks share one HTTP pool across all platforms,
+with digest deduplication across primary and sibling outputs. The default is
+256 workers (`ENRICH_PROBE_THREADS` overrides it). Dependency crawling uses a
+separate continuous queue with 64 workers (`ENRICH_CRAWL_THREADS`). Probe
+metadata feeds the crawl graph, avoiding repeated downloads. Neither pool
+fetches package payloads. Stage durations and exit codes are appended to
+`index/.outpaths/timings.tsv` under the enrichment working directory.
+These are local benchmark-based defaults, not guaranteed optimal on every runner.
 
 Workflow-level concurrency permits only one **whole pipeline** at a time.
 There is no polling coordinator, custom check state, or external state database.

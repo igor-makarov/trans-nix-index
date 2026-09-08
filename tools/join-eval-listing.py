@@ -41,7 +41,6 @@ Outputs (into --out-dir), all keyed by the same `system`:
                               keyed by digest like the graph it feeds.
 """
 import argparse
-import http.client
 import json
 import os
 import pickle
@@ -49,6 +48,7 @@ import sys
 import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from narinfo import fetch as fetch_narinfo
 
 DIGEST_LEN = 32
 # Reasons a pair carries no entry. Kept as an enum-ish constant set because
@@ -59,12 +59,6 @@ NO_ATTR = "attribute-did-not-evaluate"
 NO_OUT = "derivation-has-no-out-output"
 NOT_BUILT = "not-in-channel-listing"
 NOT_CACHED = "not-in-listing-and-not-in-cache"
-
-CACHE_HOST = "cache.nixos.org"
-USER_AGENT = "nixpkgs-multiverse"
-TIMEOUT_SECONDS = 30
-PROBE_RETRIES = 3
-PROBE_THREADS = 32
 
 
 def load_listing_meta(paths_dir, off):
@@ -112,33 +106,19 @@ def eval_file(eval_dir, rev, system):
     )
 
 
-# One HTTPS connection per probing thread, kept open across digests the way
-# tools/crawl-narinfos.py does: cache.nixos.org is one host and the handshake
-# costs more than the request.
-_local = threading.local()
+# Successful probe metadata is also crawler state; never persist transport errors.
+_probe_lock = threading.Lock()
+_probe_graph = None
 
 
 def in_cache(digest):
-    """Whether cache.nixos.org has a narinfo for this digest."""
-    for attempt in range(PROBE_RETRIES):
-        try:
-            conn = getattr(_local, "conn", None)
-            if conn is None:
-                conn = _local.conn = http.client.HTTPSConnection(
-                    CACHE_HOST, timeout=TIMEOUT_SECONDS
-                )
-            conn.request(
-                "HEAD", f"/{digest}.narinfo", headers={"User-Agent": USER_AGENT}
-            )
-            r = conn.getresponse()
-            r.read()
-            if r.status in (200, 404):
-                return r.status == 200
-        except Exception:
-            pass
-        # Transient failure or a 5xx: the connection is suspect either way.
-        _local.conn = None
-    return False
+    rec = fetch_narinfo(digest)
+    if rec.get("err"):
+        raise RuntimeError(f"narinfo probe exhausted retries: {digest}")
+    if _probe_graph:
+        with _probe_lock, open(_probe_graph, "a") as out:
+            out.write(json.dumps(rec, separators=(",", ":")) + "\n")
+    return rec["ok"]
 
 
 def split_output(value, name, output):
@@ -152,28 +132,7 @@ def split_output(value, name, output):
     return value[:DIGEST_LEN], value[DIGEST_LEN + 1 :]
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--revisions", required=True, help="revisions.json")
-    ap.add_argument("--versions", required=True, help="index/versions.json")
-    ap.add_argument("--eval-dir", required=True, help="index/.eval")
-    ap.add_argument("--paths-dir", required=True, help="the listing digest pickles")
-    ap.add_argument("--system", required=True)
-    ap.add_argument("--out-dir", required=True)
-    ap.add_argument(
-        "--prev-dir",
-        help="a directory holding the previously published artifacts for this "
-        "system; pairs that closed before they were cut are carried over "
-        "instead of being resolved again",
-    )
-    ap.add_argument(
-        "--probe-cache",
-        action="store_true",
-        help="ask cache.nixos.org about paths no listing named, and resolve the "
-        "pair when the narinfo is there",
-    )
-    args = ap.parse_args()
-
+def join(args):
     revs = json.load(open(args.revisions))
     index = json.load(open(args.versions))
     n_revs = index["revisionCount"]
@@ -305,27 +264,16 @@ def main():
     # The cache probe, on exactly the pairs the listings left unvouched. A hit
     # is a stronger statement than listing membership — the path is fetchable
     # right now — so it resolves the pair; a miss is the final answer for it.
-    if args.probe_cache and unvouched:
+    if args.probe_cache:
         print(
             f"probing cache.nixos.org for {len(unvouched)} unvouched paths", flush=True
         )
-        with ThreadPoolExecutor(PROBE_THREADS) as ex:
-            found = list(ex.map(lambda u: in_cache(u[3]), unvouched))
-
-        # The siblings of everything that came back, in one pass rather than a
-        # pool per package: three quarters of the aarch64 backfill's probes were
-        # hits, and a thread pool spun up per hit is what turned that join into
-        # an hour of mostly thread setup.
+        verdicts = yield {u[3] for u in unvouched}
+        found = [verdicts[u[3]] for u in unvouched]
         hits = [u for u, hit in zip(unvouched, found) if hit]
-        sibling_digests = sorted({d for u in hits for d in u[4].values()})
-        with ThreadPoolExecutor(PROBE_THREADS) as ex:
-            cached_siblings = {
-                digest
-                for digest, hit in zip(
-                    sibling_digests, ex.map(in_cache, sibling_digests)
-                )
-                if hit
-            }
+        sibling_digests = {d for u in hits for d in u[4].values()}
+        sibling_verdicts = yield sibling_digests
+        cached_siblings = {d for d in sibling_digests if sibling_verdicts[d]}
 
         for (attr, version, name, digest, siblings, target), hit in zip(
             unvouched, found
@@ -395,6 +343,78 @@ def main():
         f"  {len(closed)} attrs closed, {len(tip)} at the tip, {len(outs)} multi-output"
     )
     return 0
+
+
+def run_joins(jobs, threads, probe=in_cache):
+    """Two shared queues: primary paths, then siblings of successful primaries.
+
+    Platform generators hold only their join state; all HTTP work uses one pool.
+    Verdicts are shared for this invocation only, not reused across observations.
+    """
+    verdicts = {}
+    pending = []
+    for job in jobs:
+        try:
+            pending.append((job, next(job)))
+        except StopIteration:
+            pass
+    with ThreadPoolExecutor(threads) as pool:
+        while pending:
+            digests = sorted(
+                set().union(*(needed for _, needed in pending)) - verdicts.keys()
+            )
+            verdicts.update(zip(digests, pool.map(probe, digests)))
+            following = []
+            for job, _ in pending:
+                try:
+                    following.append((job, job.send(verdicts)))
+                except StopIteration:
+                    pass
+            pending = following
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--revisions", required=True, help="revisions.json")
+    ap.add_argument("--versions", required=True, help="index/versions.json")
+    ap.add_argument("--eval-dir", required=True, help="index/.eval")
+    ap.add_argument("--paths-dir", required=True, help="the listing digest pickles")
+    systems = ap.add_mutually_exclusive_group(required=True)
+    systems.add_argument("--system")
+    systems.add_argument(
+        "--systems", help="comma-separated platforms sharing one probe queue"
+    )
+    ap.add_argument("--threads", type=int, default=256)
+    ap.add_argument("--out-dir", required=True)
+    ap.add_argument(
+        "--prev-dir",
+        help="a directory holding the previously published artifacts for this "
+        "system; pairs that closed before they were cut are carried over "
+        "instead of being resolved again",
+    )
+    ap.add_argument(
+        "--probe-cache",
+        action="store_true",
+        help="ask cache.nixos.org about paths no listing named, and resolve the "
+        "pair when the narinfo is there",
+    )
+    ap.add_argument("--graph", help="append probe metadata for subsequent crawling")
+    args = ap.parse_args()
+    if args.threads < 1:
+        ap.error("--threads must be positive")
+    names = args.systems.split(",") if args.systems else [args.system]
+    if not all(names) or len(set(names)) != len(names):
+        ap.error("empty or duplicate systems")
+    global _probe_graph
+    _probe_graph = args.graph
+    if _probe_graph:
+        with open(_probe_graph, "a") as out:
+            out.write("\n")
+
+    jobs = [
+        join(argparse.Namespace(**(vars(args) | {"system": name}))) for name in names
+    ]
+    run_joins(jobs, args.threads)
 
 
 if __name__ == "__main__":
