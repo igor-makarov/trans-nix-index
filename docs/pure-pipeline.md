@@ -15,8 +15,9 @@ One `pure-index` workflow contains the entire graph:
    select up to eight recent revisions as a complete trial dataset.
 2. **revisions** is a matrix of up to 256 shards, not one job per revision.
    Revisions are distributed round-robin. Each shard submits all cache-missing
-   revision derivations in one realisation request. GitHub manages runner capacity.
-   The current utilization trial explicitly uses `--shards 2`; the partitioner
+   revisions to separate extraction lanes: three output evaluations and one
+   version extraction concurrently, then up to four cheap combiners. GitHub manages runner capacity.
+   The current utilization trial explicitly uses `--shards 1`; the partitioner
    default remains 256.
    Every revision is still an independent Nix derivation.
 3. **merge** depends on all shards succeeding and folds their Cachix outputs
@@ -51,7 +52,10 @@ index: every manifest revision supplies an independent cached input.
 
 Each revision publishes one attribute-grouped JSON containing versions, all three
 platforms' outputs, and errors, with shared names stored once where possible.
-Independent extraction derivations run under `nix build --max-jobs 4`; the final
+Output and version extraction use separate Nix requests with `--max-jobs 3`
+and `--max-jobs 1`. Both must succeed before the combiners run. Lane assignments
+come from the actual revision derivation dependencies, without changing recipes.
+The Docker wrapper is used both locally and in CI; the final
 combiner copies data rather than linking intermediate outputs. Diagnostic text
 may still reference nixpkgs sources. Merge reconstructs the per-platform JSON
 interface for observation from the combined artifacts.

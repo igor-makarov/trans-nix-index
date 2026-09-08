@@ -9,6 +9,11 @@
       ''
         python3 ${../tests/revision-shards.py} ${../tools/revision-shards.py} | tee "$out"
       '';
+  shard-build-lanes =
+    pkgs.runCommand "check-shard-build-lanes" { nativeBuildInputs = [ pkgs.python3 ]; }
+      ''
+        python3 ${../tests/shard-build-lanes.py} ${../tools} | tee "$out"
+      '';
   pure-inputs = pkgs.runCommand "check-pure-inputs" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 ${../tests/pure-inputs.py} ${../tools} | tee "$out"
   '';

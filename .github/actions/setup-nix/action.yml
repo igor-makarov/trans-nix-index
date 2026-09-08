@@ -1,9 +1,8 @@
-name: Set up native Nix and mise
-description: Install sandboxed Nix on the runner; keep Docker tooling local-only.
+name: Set up Nix wrapper
+description: Install mise for the Docker-based Nix wrapper.
 runs:
   using: composite
   steps:
-    - uses: cachix/install-nix-action@v31
     - uses: jdx/mise-action@v4
       with:
         install: false

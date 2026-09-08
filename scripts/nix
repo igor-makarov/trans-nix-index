@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Keep the same Nix settings for native CI and local Docker invocations.
+# Shared Nix settings for local and CI Docker invocations.
 config='experimental-features = nix-command flakes
 sandbox = true
 extra-substituters = https://trans-nix-index.cachix.org
@@ -9,16 +9,6 @@ extra-trusted-public-keys = trans-nix-index.cachix.org-1:CgtmqltynGk+5llIi/y0gR8
 
 # mise runs tasks from the project root; preserve the caller's working directory.
 workdir="${MISE_ORIGINAL_CWD:-$PWD}"
-if [[ "${CI:-}" == true ]]; then
-  command -v nix >/dev/null || {
-    echo 'CI requires Nix installed on the runner' >&2
-    exit 127
-  }
-  export NIX_CONFIG="${NIX_CONFIG:+$NIX_CONFIG
-}$config"
-  cd "$workdir"
-  exec nix "$@"
-fi
 root="$(cd "$(dirname "$0")/.." && pwd -P)"
 terminal=(-i)
 if [[ -t 0 && -t 1 ]]; then

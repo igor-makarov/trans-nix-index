@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One realisation request for all cache-missing revisions assigned to this shard.
+# Separate heavy output evaluation from lighter version extraction.
 set -euo pipefail
 source scripts/ci/cachix
 (( $# > 0 ))
@@ -10,7 +10,30 @@ for drv in "$@"; do
 done
 mkdir -p _ci/pure
 roots=$(mktemp -d "$PWD/_ci/pure/shard-roots.XXXXXXXX")
-echo "$(date -u +%FT%TZ) shard realisation start: $# revisions" >&2
+python3 tools/shard-build-lanes.py "$roots" "$@"
+mapfile -t output_drvs < "$roots/heavy"
+mapfile -t version_drvs < "$roots/light"
+pids=()
+cleanup() {
+  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+echo "$(date -u +%FT%TZ) shard extraction start: ${#output_drvs[@]} heavy / ${#version_drvs[@]} light" >&2
+nix build --max-jobs 3 "${output_drvs[@]}" --out-link "$roots/heavy-result" -L &
+heavy=$!
+pids+=("$heavy")
+nix build --max-jobs 1 "${version_drvs[@]}" --out-link "$roots/light-result" -L &
+light=$!
+pids+=("$light")
+status=0
+wait "$heavy" || status=$?
+wait "$light" || status=$?
+pids=()
+(( status == 0 )) || exit "$status"
+echo "$(date -u +%FT%TZ) extraction complete; combining revisions" >&2
 nix build --max-jobs 4 "${targets[@]}" --out-link "$roots/result" --print-out-paths -L > "$roots/outputs"
 echo "$(date -u +%FT%TZ) shard realisation complete; upload start" >&2
 while IFS= read -r result; do

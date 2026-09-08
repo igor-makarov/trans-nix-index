@@ -57,7 +57,7 @@ jobs:
         run: bash scripts/ci/discover-pure
       - id: plan
         name: Partition revisions into one trial shard
-        # Temporary native-runner utilization trial; partitioner defaults to 256.
+        # Temporary single-shard lane trial; partitioner defaults to 256.
         run: python3 tools/revision-shards.py plan _ci/pure/inputs/matrix.json --shards 1
       - id: manifest
         uses: actions/upload-artifact@v7
