@@ -10,7 +10,7 @@ on:
       limit:
         description: 'Maximum new revisions during rollout'
         type: choice
-        options: ['1', '2', '3']
+        options: ['1', '2', '3', '4']
         default: '1'
       enrich:
         description: 'Run external cache observation (can be expensive)'
@@ -88,7 +88,14 @@ jobs:
           path: _ci/pure/inputs
       - uses: jdx/mise-action@v4
       - name: Skip cached revisions; build and publish missing ones
-        run: mise run nix -- develop --command python3 tools/revision-shards.py build _ci/pure/inputs/matrix.json
+        run: python3 tools/monitor-runner.py _ci/pure/metrics/runner.jsonl mise run nix -- develop --command python3 tools/revision-shards.py build _ci/pure/inputs/matrix.json
+      - name: Upload runner utilization
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: _ci/pure/metrics/
+          retention-days: 7
   merge:
     needs: [discover, revisions]
     runs-on: ubuntu-24.04-arm

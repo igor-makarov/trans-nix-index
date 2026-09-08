@@ -12,7 +12,7 @@ One `pure-index` workflow contains the entire graph:
 
 1. **discover** fetches S3/GitHub channel metadata, without prefetching source
    trees. The manifest and revision plan are a GitHub run artifact. Fresh trials
-   select 1–3 recent revisions as a complete trial dataset.
+   select 1–4 recent revisions as a complete trial dataset.
 2. **revisions** is a matrix of up to 256 shards, not one job per revision.
    Revisions are distributed round-robin; each shard processes its share
    sequentially. GitHub manages runner capacity without a custom slot limit.
@@ -30,7 +30,7 @@ There is no polling coordinator, custom check state, or external state database.
 GitHub's `needs` supplies fan-in. Revision jobs use `fail-fast: false`, allowing
 other shards to finish and publish useful work even when one fails. Merge does
 not run after a failed shard. The workflow files must be on the default branch
-before the first manual trial. This orchestration has not yet been run on GitHub.
+before the first manual trial. One- and three-revision trials have passed on GitHub.
 
 A shard computes each revision's expected output path, checks only remote
 narinfo metadata (including referenced dependencies), and skips cached outputs
@@ -47,8 +47,19 @@ enabled. `observation_previous` optionally supplies an enriched snapshot for
 external observation reuse only. Discovery and pure merge never read a previous
 index: every manifest revision supplies an independent cached input.
 
+Each revision publishes one attribute-grouped JSON containing versions, all three
+platforms' outputs, and errors, with shared names stored once where possible.
+Independent extraction derivations run under `nix build --max-jobs 3`; the final
+combiner copies data rather than linking intermediate outputs. Diagnostic text
+may still reference nixpkgs sources. Merge reconstructs the per-platform JSON
+interface for observation from the combined artifacts.
+
+Shard jobs record host CPU, available memory, swap use, and I/O wait every five
+seconds in separate seven-day `runner-*` GitHub artifacts. These are host-wide
+samples, not per-process measurements. Build/upload boundaries are timestamped.
+
 Cachix holds per-revision outputs, aggregates, observation snapshots, and site
-closures. The GitHub artifact contains discovery metadata only, and its exact
+closures. The discovery artifact contains metadata only, and its exact
 artifact ID is passed to consumers (also when retrying failed jobs). Result
 store paths travel as job outputs. Pages additionally uses its required upload
 artifact for deployment. The legacy scheduled OCI workflows remain unchanged.
@@ -105,7 +116,7 @@ preflight policy.
 
 Trial release metadata is empty. Supply independently discovered release tips
 in a production manifest; full historical discovery remains a separate rollout
-step, not something the 1–3 revision trial performs.
+step, not something the 1–4 revision trial performs.
 
 ## Local use
 

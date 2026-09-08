@@ -43,8 +43,8 @@ def channel_key(name):
 
 
 def discover(destination, limit):
-    if not 1 <= limit <= 3:
-        raise ValueError("trial limit must be between 1 and 3 new revisions")
+    if not 1 <= limit <= 4:
+        raise ValueError("trial limit must be between 1 and 4 new revisions")
     releases = {}
     candidates = sorted((n for n in channels() if channel_key(n)), key=channel_key)
     # Manual rollout selects a small complete dataset, not an incremental tail.

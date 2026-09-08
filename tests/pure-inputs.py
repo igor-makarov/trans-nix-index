@@ -36,7 +36,15 @@ with tempfile.TemporaryDirectory() as tmp:
     files = {}
     for r, attrs in zip(revs, [{"a": "1", "b": "1"}, {"a": "2"}, {"a": "1", "b": "1"}]):
         file = root / r["rev"]
-        file.write_text(json.dumps(attrs))
+        file.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "rev": r["rev"],
+                    "attrs": {a: {"version": v} for a, v in attrs.items()},
+                }
+            )
+        )
         files[r["rev"]] = str(file)
     whole = fold.merge(manifest, files)
     assert whole == fold.merge(manifest, files)
@@ -81,7 +89,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert fold.read(root / "larger/matrix.json") == {
         "include": [{"rev": r["rev"], "name": r["name"]} for r in revs]
     }
-    for limit in (0, 4, 1000):
+    for limit in (0, 5, 1000):
         try:
             discovery.discover(root / "bad", limit)
         except ValueError:

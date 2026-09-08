@@ -75,16 +75,9 @@ let
 in
 {
   inherit versions outputs;
-  all = pkgs.linkFarm "revision-${label}" (
-    [
-      {
-        name = "versions.json";
-        path = versions;
-      }
-    ]
-    ++ map (system: {
-      name = "outputs/${system}";
-      path = outputs.${system};
-    }) systems
-  );
+  all = pkgs.runCommand "revision-${label}.json" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    python3 ${../tools/combine-revision.py} ${versions} \
+      ${pkgs.lib.escapeShellArg (builtins.toJSON outputs)} \
+      ${pkgs.lib.escapeShellArg revision.rev} "$out"
+  '';
 }

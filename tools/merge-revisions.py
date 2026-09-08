@@ -18,7 +18,10 @@ def merge(manifest, files):
     if set(files) != expected:
         raise ValueError("extraction inputs do not exactly match manifest revisions")
     for off in range(len(revs)):
-        attrs = read(files[revs[off]["rev"]])
+        data = read(files[revs[off]["rev"]])
+        if data["schema"] != 1 or data["rev"] != revs[off]["rev"]:
+            raise ValueError("revision artifact identity mismatch")
+        attrs = {a: d["version"] for a, d in data["attrs"].items() if "version" in d}
         if not attrs or not all(isinstance(v, str) for v in attrs.values()):
             raise ValueError("empty or invalid revision extraction")
         for attr, version in attrs.items():

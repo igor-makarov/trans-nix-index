@@ -37,7 +37,7 @@ let
         builtins.listToAttrs (
           map (r: {
             name = r.rev;
-            value = perRevision.${r.name}.versions;
+            value = perRevision.${r.name}.all;
           }) revisions
         )
       )
@@ -61,15 +61,9 @@ let
       ''
   );
   evaluations = mergeOnly (
-    pkgs.linkFarm "revision-evaluations" (
-      pkgs.lib.concatMap (
-        r:
-        map (system: {
-          name = "${r.rev}.${system}.pure.json";
-          path = "${perRevision.${r.name}.outputs.${system}}/outputs.json";
-        }) systems
-      ) revisions
-    )
+    pkgs.runCommand "revision-evaluations" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+      python3 ${../tools/split-revision-evaluations.py} ${files} "$out"
+    ''
   );
 in
 assert manifest.schema == 1;

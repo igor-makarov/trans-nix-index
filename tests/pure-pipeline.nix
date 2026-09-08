@@ -58,7 +58,7 @@ assert
 pkgs.runCommand "check-pure-pipeline" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 - ${pipeline.all} ${again.all} ${
       real.outputs.${pkgs.stdenv.hostPlatform.system}
-    }/outputs.json '${expected}' <<'PY'
+    }/outputs.json '${expected}' ${direct.all} <<'PY'
   import json, pathlib, sys
   first, second = map(pathlib.Path, sys.argv[1:3])
   load = lambda p: json.loads(p.read_text())
@@ -75,6 +75,11 @@ pkgs.runCommand "check-pure-pipeline" { nativeBuildInputs = [ pkgs.python3 ]; } 
   x86 = load(first / f'evaluations/{"1" * 40}.x86_64-linux.pure.json')
   arm = load(first / f'evaluations/{"1" * 40}.aarch64-linux.pure.json')
   assert x86['attrs']['hello']['outputs']['out'] != arm['attrs']['hello']['outputs']['out']
+  combined = load(pathlib.Path(sys.argv[5]))
+  assert combined['schema'] == 1 and combined['rev'] == '1' * 40
+  assert combined['attrs']['hello']['version'] == '1'
+  assert set(combined['systems']) == {'x86_64-linux', 'aarch64-linux', 'aarch64-darwin'}
+  assert all(sum('error' in a['systems'].get(s, {}) for a in combined['attrs'].values()) == 1 for s in combined['systems'])
   real = load(pathlib.Path(sys.argv[3]))
   assert real['attrs']['hello']['outputs']['out'] == sys.argv[4].split('/')[3][:32], real
   print('sandboxed versions, output paths, independent revision identities, full merge, real nixpkgs hello path: OK')
