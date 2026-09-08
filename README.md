@@ -30,4 +30,10 @@ no Git tags or GitHub Releases are used.
 See [building and recovery](docs/building-the-index.md) and
 [publication](docs/ci.md) for implementation details.
 
+A [pure per-revision pipeline](docs/pure-pipeline.md) is available for manual,
+small-batch trials: one workflow with discovery, up to 256 revision shards,
+merge, cache-observation, and Pages jobs. Build outputs live in Cachix;
+the discovery manifest is a GitHub run artifact. The scheduled OCI pipeline
+remains active during rollout.
+
 [MIT](LICENSE). Based on work by Farid Zakaria and contributors.

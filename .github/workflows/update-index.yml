@@ -17,7 +17,6 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       EVAL_WORKERS: '2'
-      EVAL_MAXMEM: '2000'
     steps:
       - uses: actions/checkout@v7
         with:

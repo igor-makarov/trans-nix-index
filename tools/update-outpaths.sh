@@ -54,6 +54,7 @@ EVAL="$MT/index/.eval"
 
 MODE=incremental
 SHARD=0
+PURE_EVALUATIONS=""
 # Every system the artifacts are published for. A system listed here without an
 # evaluation simply produces no entries, so adding one is a matter of running
 # the backfill for it.
@@ -63,6 +64,7 @@ while [ $# -gt 0 ]; do
     --full) MODE=full; shift ;;
     --shard) SHARD=1; shift ;;
     --systems) SYSTEMS="$2"; shift 2 ;;
+    --evaluations) PURE_EVALUATIONS="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -110,7 +112,21 @@ fi
 #    finds no evaluation for those pairs. An incremental run is held to the
 #    stricter standard: it evaluates revisions that landed days ago, where a
 #    failure is a bug to look at rather than history being what it is.
-if ! bash "$HERE/eval-outpaths.sh" --offsets "$OFFSETS" --system "$SYSTEMS"; then
+if [ -n "$PURE_EVALUATIONS" ]; then
+  # Functional boundary: consume explicit pure outputs, never evaluate or
+  # silently fall back to a mutable extraction cache in this mode.
+  EVAL="$PURE_EVALUATIONS"
+  python3 - "$MT/revisions.json" "$EVAL" "$SYSTEMS" "$MINOFF" <<'PY'
+import json, pathlib, sys
+revs = json.load(open(sys.argv[1]))
+for rev in revs[int(sys.argv[4]):]:
+    for system in sys.argv[3].split(','):
+        path = pathlib.Path(sys.argv[2]) / f"{rev['rev']}.{system}.pure.json"
+        data = json.loads(path.read_text())
+        if data['rev'] != rev['rev'] or data['system'] != system or not data['attrs']:
+            raise ValueError(f"invalid pure evaluation: {path}")
+PY
+elif ! bash "$HERE/eval-outpaths.sh" --offsets "$OFFSETS" --system "$SYSTEMS"; then
   if [ "$MODE" != full ]; then
     echo "update-outpaths: evaluation failed; refusing to join a partial set" >&2
     exit 1

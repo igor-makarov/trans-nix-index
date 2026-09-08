@@ -28,7 +28,7 @@
 #   tools/eval-outpaths.sh --offsets 14,154,939   named offsets, comma separated
 #   tools/eval-outpaths.sh -n 5                   first 5 revisions (smoke test)
 #   tools/eval-outpaths.sh -j 8                   that many revisions at once
-#   tools/eval-outpaths.sh --workers 4 --max-memory 4096
+#   tools/eval-outpaths.sh --workers 4
 #   tools/eval-outpaths.sh --topup               fold the listed package sets
 #                                                into existing evaluations
 #
@@ -69,12 +69,9 @@ SYSTEM="${EVAL_SYSTEM:-x86_64-linux}"
 OFFSETS=":"
 LIMIT=0
 JOBS=1
-# Per-revision evaluation is split across nix-eval-jobs workers, each of which
-# recycles when it hits --max-memory. Six at 3 GB walks the whole top level of a
-# 2026 revision in ~50 seconds; the defaults are sized for one revision on a
-# laptop, and -j on a big machine wants them lower.
+# Per-revision evaluation uses nix-eval-jobs' default memory threshold.
+# Account for each worker's RAM when increasing workers or concurrent revisions.
 WORKERS="${EVAL_WORKERS:-6}"
-MAXMEM="${EVAL_MAXMEM:-3072}"
 # Nix's evaluator recursion limit, set here rather than left to whatever the
 # host's Nix defaults to: texlive's `un_adj` recursion overruns the older
 # default of 10,000 and takes the whole run down with it, so the same revision
@@ -94,7 +91,6 @@ while [ $# -gt 0 ]; do
     -n) LIMIT="${2:-0}"; shift 2 ;;
     -j) JOBS="${2:-1}"; shift 2 ;;
     --workers) WORKERS="$2"; shift 2 ;;
-    --max-memory) MAXMEM="$2"; shift 2 ;;
     --topup) TOPUP=1; shift ;;
     --assume-additive) ASSUME_ADDITIVE=1; shift ;;
     # Internal: how -j hands one revision to a child invocation.
@@ -104,11 +100,10 @@ while [ $# -gt 0 ]; do
 done
 EVAL_SYSTEM="$SYSTEM"
 EVAL_WORKERS="$WORKERS"
-EVAL_MAXMEM="$MAXMEM"
 EVAL_CALLDEPTH="$CALLDEPTH"
 EVAL_TOPUP="$TOPUP"
 EVAL_ASSUME_ADDITIVE="$ASSUME_ADDITIVE"
-export EVAL_SYSTEM EVAL_WORKERS EVAL_MAXMEM EVAL_CALLDEPTH EVAL_TOPUP EVAL_ASSUME_ADDITIVE
+export EVAL_SYSTEM EVAL_WORKERS EVAL_CALLDEPTH EVAL_TOPUP EVAL_ASSUME_ADDITIVE
 
 if ! command -v nix-eval-jobs >/dev/null 2>&1; then
   echo "eval-outpaths: nix-eval-jobs is not on PATH." >&2
@@ -180,7 +175,7 @@ topup_system() {
   # Only the listed sets. `attrs` takes a Nix expression, so the list is read
   # from the same file the key is computed over rather than spelled again here.
   if ! nix-eval-jobs \
-      --workers "$WORKERS" --max-memory-size "$MAXMEM" --no-instantiate \
+      --workers "$WORKERS" --no-instantiate \
       --option max-call-depth "$CALLDEPTH" \
       --arg revPath "$src" --argstr system "$system" \
       --arg attrs "import $NIXDIR/nested-sets.nix" \
@@ -234,7 +229,7 @@ eval_system() {
   # a non-zero exit here means the run itself died — a revision modern Nix
   # cannot read at all, which keeps no file rather than a partial one.
   if ! nix-eval-jobs \
-      --workers "$WORKERS" --max-memory-size "$MAXMEM" --no-instantiate \
+      --workers "$WORKERS" --no-instantiate \
       --option max-call-depth "$CALLDEPTH" \
       --arg revPath "$src" --argstr system "$system" \
       "$NIXDIR/eval-outpaths.nix" > "$dest.jsonl" 2> "$dest.err"; then

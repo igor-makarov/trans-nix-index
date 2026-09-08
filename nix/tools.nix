@@ -13,5 +13,6 @@
     gzip
     gh
     oras
+    cachix
   ];
 }

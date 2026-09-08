@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Source inside nix develop. No credential is written to the checkout.
+set -euo pipefail
+cachix use trans-nix-index
+# cachix use configures child Nix commands; builders remain sandboxed.
+export NIX_CONFIG="${NIX_CONFIG:-}
+sandbox = true"
+cache_push() {
+  : "${CACHIX_AUTH_TOKEN:?Set CACHIX_AUTH_TOKEN to publish pipeline outputs}"
+  cachix push trans-nix-index "$1"
+}
+cache_pull() {
+  case "$1" in
+    /nix/store/*) ;;
+    *) echo 'Expected a Nix store path' >&2; return 1 ;;
+  esac
+  nix-store --realise "$1" >/dev/null
+}

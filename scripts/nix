@@ -54,9 +54,13 @@ docker run --rm --init --name "$name" \
   --mount type=volume,source=trans-nix-index-cache,target=/root/.cache/nix \
   --workdir /workspace \
   --env GH_TOKEN --env GITHUB_TOKEN --env GITHUB_REPOSITORY --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT --env GITHUB_SHA --env GITHUB_ACTOR \
-  --env EVAL_WORKERS --env EVAL_MAXMEM \
+  --env EVAL_WORKERS --env CACHIX_AUTH_TOKEN \
+  --env PIPELINE_INPUTS --env PIPELINE_PREVIOUS --env PIPELINE_REVISION --env PIPELINE_REVISION_NAME \
+  --env PIPELINE_LIMIT --env PIPELINE_CENSUS --env PIPELINE_RESULT --env PIPELINE_SHARD \
   --env 'NIX_CONFIG=experimental-features = nix-command flakes
-sandbox = true' \
+sandbox = true
+extra-substituters = https://trans-nix-index.cachix.org
+extra-trusted-public-keys = trans-nix-index.cachix.org-1:CgtmqltynGk+5llIi/y0gR8Zi/lDSdcoegVGYEG38I8=' \
   --entrypoint /bin/sh nixos/nix:latest -c '
     parent=$$
     (

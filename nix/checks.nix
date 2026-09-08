@@ -1,5 +1,17 @@
 { pkgs, system }:
 {
+  pure-pipeline = import ../tests/pure-pipeline.nix { inherit pkgs; };
+  prepare-merge = pkgs.runCommand "check-prepare-merge" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    python3 ${../tests/prepare-merge.py} ${../tools/prepare-merge.py} | tee "$out"
+  '';
+  revision-shards =
+    pkgs.runCommand "check-revision-shards" { nativeBuildInputs = [ pkgs.python3 ]; }
+      ''
+        python3 ${../tests/revision-shards.py} ${../tools/revision-shards.py} | tee "$out"
+      '';
+  pure-inputs = pkgs.runCommand "check-pure-inputs" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    python3 ${../tests/pure-inputs.py} ${../tools} | tee "$out"
+  '';
   ci =
     pkgs.runCommand "check-ci"
       {

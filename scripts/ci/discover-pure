@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Discovery emits a plain plan for a GitHub run artifact, not a Nix output.
+set -euo pipefail
+mkdir -p _ci/pure
+args=(--limit "${PIPELINE_LIMIT:-1}")
+python3 tools/discover-pipeline.py _ci/pure/inputs "${args[@]}"

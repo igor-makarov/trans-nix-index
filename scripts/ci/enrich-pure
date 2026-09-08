@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Deliberately impure: cache membership, narinfos, runtime graph and closures.
+set -euo pipefail
+source scripts/ci/cachix
+: "${PIPELINE_RESULT:?Pass the pure aggregate store path}"
+cache_pull "$PIPELINE_RESULT"
+export MULTIVERSE_ROOT="$PWD/_ci/pure/enrichment"
+export MULTIVERSE_NIX="$PWD/nix"
+mkdir -p "$MULTIVERSE_ROOT/index"
+cp "$PIPELINE_RESULT/index/"{revisions,releases}.json "$MULTIVERSE_ROOT/"
+cp "$PIPELINE_RESULT/index/"{versions,history,stats}.json "$MULTIVERSE_ROOT/index/"
+mode=(--full)
+if [[ -n "${PIPELINE_PREVIOUS:-}" ]]; then
+  cache_pull "$PIPELINE_PREVIOUS"
+  # Never crawl all history because an incremental base lacks enrichment.
+  test -d "$PIPELINE_PREVIOUS/snapshot"
+  bash tools/restore-outpaths-state.sh "$PIPELINE_PREVIOUS/snapshot"
+  mode=()
+fi
+systems=$(nix eval --json --file nix/revision-systems.nix | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)))')
+bash tools/update-outpaths.sh "${mode[@]}" --systems "$systems" \
+  --evaluations "$PIPELINE_RESULT/evaluations"
+if [[ "${PIPELINE_CENSUS:-false}" == true ]]; then
+  bash scripts/ci/observe-census
+fi
+staging=$(mktemp -d "$PWD/_ci/pure/snapshot.XXXXXXXX")
+mkdir "$staging/artifacts" "$staging/state"
+cp "$PIPELINE_RESULT/index/"*.json "$staging/"
+work="$MULTIVERSE_ROOT/index/.outpaths"
+cp "$work/data/"{outpaths-,tip-outpaths-,outs-}*.json "$staging/artifacts/"
+cp "$work/data/"{info-indexed,refs-indexed,closures,outs-indexed}.json "$staging/artifacts/"
+cp "$work/graph.jsonl" "$staging/state/"
+shopt -s nullglob
+for file in "$work/data/"misses-*.json; do cp "$file" "$staging/state/"; done
+if [[ -f "$work/census-results.json" ]]; then
+  cp "$work/census-results.json" "$staging/state/"
+fi
+raw=$(nix store add-path --name cache-observations "$staging")
+result=$(nix build --file nix/enriched-build.nix --argstr pure "$PIPELINE_RESULT" \
+  --argstr observations "$raw" --no-link --print-out-paths -L)
+cache_push "$result"
+printf '%s\n' "$result" > _ci/pure/result-path

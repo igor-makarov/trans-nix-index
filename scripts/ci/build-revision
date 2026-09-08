@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source scripts/ci/cachix
+: "${PIPELINE_REVISION:?Pass a full revision commit}"
+: "${PIPELINE_REVISION_NAME:?Pass the published channel name}"
+[[ "$PIPELINE_REVISION" =~ ^[0-9a-f]{40}$ ]]
+[[ "$PIPELINE_REVISION_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]
+result=$(nix build --file nix/revision-build.nix \
+  --argstr name "$PIPELINE_REVISION_NAME" --argstr rev "$PIPELINE_REVISION" \
+  all --no-link --print-out-paths -L)
+cache_push "$result"

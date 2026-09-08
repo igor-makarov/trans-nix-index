@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source scripts/ci/cachix
+PIPELINE_INPUTS="$PWD/_ci/pure/inputs"
+test -f "$PIPELINE_INPUTS/manifest.json"
+roots=$(mktemp -d "$PWD/_ci/pure/merge-roots.XXXXXXXX")
+nix-instantiate nix/pipeline-build.nix --argstr inputs "$PIPELINE_INPUTS" \
+  -A all --add-root "$roots/derivation" >/dev/null
+drv=$(readlink -f "$roots/derivation")
+python3 tools/prepare-merge.py "$drv" "$roots/inputs"
+nix-store --realise "$drv" --add-root "$roots/result" >/dev/null
+result=$(readlink -f "$roots/result")
+cache_push "$result"
+mkdir -p _ci/pure
+printf '%s\n' "$result" > _ci/pure/result-path
