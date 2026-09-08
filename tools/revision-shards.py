@@ -20,12 +20,14 @@ def rows_from(plan):
     return rows
 
 
-def matrix(rows):
-    return {"include": [{"shard": i} for i in range(min(256, len(rows)))]}
+def matrix(rows, shards=256):
+    if not 1 <= shards <= 256:
+        raise ValueError("shard count must be between 1 and 256")
+    return {"include": [{"shard": i} for i in range(min(shards, len(rows)))]}
 
 
-def assigned(rows, shard):
-    count = min(256, len(rows))
+def assigned(rows, shard, shards=256):
+    count = len(matrix(rows, shards)["include"])
     if not 0 <= shard < count:
         raise ValueError("invalid shard")
     return rows[shard::count]
@@ -92,15 +94,19 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=["plan", "build"])
     parser.add_argument("plan", type=Path)
+    parser.add_argument("--shards", type=int, default=256)
     args = parser.parse_args()
     rows = rows_from(json.loads(args.plan.read_text()))
     if args.command == "plan":
         with open(os.environ["GITHUB_OUTPUT"], "a") as out:
             out.write(
-                "matrix=" + json.dumps(matrix(rows), separators=(",", ":")) + "\n"
+                "matrix="
+                + json.dumps(matrix(rows, args.shards), separators=(",", ":"))
+                + "\n"
             )
         return
-    for row in assigned(rows, int(os.environ["PIPELINE_SHARD"])):
+    missing = []
+    for row in assigned(rows, int(os.environ["PIPELINE_SHARD"]), args.shards):
         path = subprocess.check_output(
             [
                 "nix",
@@ -121,11 +127,25 @@ def main():
         if cached(path):
             print(f"Cached; skipping {row['name']}: {path}", flush=True)
             continue
-        print(f"Building {row['name']}", flush=True)
-        env = dict(
-            os.environ, PIPELINE_REVISION=row["rev"], PIPELINE_REVISION_NAME=row["name"]
-        )
-        subprocess.run(["bash", "scripts/ci/build-revision"], env=env, check=True)
+        print(f"Queued for build: {row['name']}", flush=True)
+        drv = subprocess.check_output(
+            [
+                "nix-instantiate",
+                "nix/revision-build.nix",
+                "--argstr",
+                "name",
+                row["name"],
+                "--argstr",
+                "rev",
+                row["rev"],
+                "-A",
+                "all",
+            ],
+            text=True,
+        ).strip()
+        missing.append(drv)
+    if missing:
+        subprocess.run(["bash", "scripts/ci/build-shard", *missing], check=True)
 
 
 if __name__ == "__main__":

@@ -12,10 +12,12 @@ One `pure-index` workflow contains the entire graph:
 
 1. **discover** fetches S3/GitHub channel metadata, without prefetching source
    trees. The manifest and revision plan are a GitHub run artifact. Fresh trials
-   select 1–4 recent revisions as a complete trial dataset.
+   select up to eight recent revisions as a complete trial dataset.
 2. **revisions** is a matrix of up to 256 shards, not one job per revision.
-   Revisions are distributed round-robin; each shard processes its share
-   sequentially. GitHub manages runner capacity without a custom slot limit.
+   Revisions are distributed round-robin. Each shard submits all cache-missing
+   revision derivations in one realisation request. GitHub manages runner capacity.
+   The current utilization trial explicitly uses `--shards 2`; the partitioner
+   default remains 256.
    Every revision is still an independent Nix derivation.
 3. **merge** depends on all shards succeeding and folds their Cachix outputs
    into the version index, history, and statistics. No live availability probes.
@@ -34,7 +36,7 @@ before the first manual trial. One- and three-revision trials have passed on Git
 
 A shard computes each revision's expected output path, checks only remote
 narinfo metadata (including referenced dependencies), and skips cached outputs
-without downloading their payloads. Cache misses build and push immediately.
+without downloading their payloads. Cache misses are collected, realised together, and then pushed.
 Only HTTP 404 is treated as missing; network/server errors fail the job. This
 probe is an availability hint, not signature/payload verification: Nix verifies
 actual downloads when outputs are consumed. Sources may still need downloading
@@ -49,7 +51,7 @@ index: every manifest revision supplies an independent cached input.
 
 Each revision publishes one attribute-grouped JSON containing versions, all three
 platforms' outputs, and errors, with shared names stored once where possible.
-Independent extraction derivations run under `nix build --max-jobs 3`; the final
+Independent extraction derivations run under `nix build --max-jobs 4`; the final
 combiner copies data rather than linking intermediate outputs. Diagnostic text
 may still reference nixpkgs sources. Merge reconstructs the per-platform JSON
 interface for observation from the combined artifacts.
@@ -116,7 +118,7 @@ preflight policy.
 
 Trial release metadata is empty. Supply independently discovered release tips
 in a production manifest; full historical discovery remains a separate rollout
-step, not something the 1–4 revision trial performs.
+step, not something the bounded revision trial performs.
 
 ## Local use
 

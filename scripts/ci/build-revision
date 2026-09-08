@@ -6,7 +6,7 @@ source scripts/ci/cachix
 [[ "$PIPELINE_REVISION" =~ ^[0-9a-f]{40}$ ]]
 [[ "$PIPELINE_REVISION_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]
 echo "$(date -u +%FT%TZ) revision build start: $PIPELINE_REVISION" >&2
-result=$(nix build --max-jobs 3 --file nix/revision-build.nix \
+result=$(nix build --max-jobs 4 --file nix/revision-build.nix \
   --argstr name "$PIPELINE_REVISION_NAME" --argstr rev "$PIPELINE_REVISION" \
   all --no-link --print-out-paths -L)
 echo "$(date -u +%FT%TZ) revision build complete; upload start" >&2

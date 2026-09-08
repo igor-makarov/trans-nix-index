@@ -77,15 +77,40 @@ with tempfile.TemporaryDirectory() as tmp:
             patch.object(m.subprocess, "run") as build,
         ):
             m.main()
-            evaluate.assert_called_once()
+            assert evaluate.call_count == (1 if hit else 2)
             probe.assert_called_once_with(root)
-            assert evaluate.call_args.args[0][-1] == "all.outPath"
+            assert evaluate.call_args_list[0].args[0][-1] == "all.outPath"
             if hit:
                 build.assert_not_called()
             else:
                 build.assert_called_once()
-                assert build.call_args.args[0] == ["bash", "scripts/ci/build-revision"]
-                assert build.call_args.kwargs["env"]["PIPELINE_REVISION"] == "a" * 40
+                assert build.call_args.args[0] == [
+                    "bash",
+                    "scripts/ci/build-shard",
+                    root,
+                ]
+    plan.write_text(
+        json.dumps(
+            {
+                "include": [
+                    {"name": f"revision-{i}", "rev": f"{i:040x}"} for i in range(8)
+                ]
+            }
+        )
+    )
+    with (
+        patch.object(
+            sys, "argv", ["revision-shards", "build", str(plan), "--shards", "2"]
+        ),
+        patch.dict(os.environ, {"PIPELINE_SHARD": "0"}),
+        patch.object(m.subprocess, "check_output", return_value=root),
+        patch.object(m, "cached", side_effect=[False, True, False, True]),
+        patch.object(m.subprocess, "run") as build,
+    ):
+        m.main()
+        build.assert_called_once_with(
+            ["bash", "scripts/ci/build-shard", root, root], check=True
+        )
 print(
     "shards: 10,000 revisions, balanced exact coverage, metadata-only hits/misses/dependencies/errors, cache hits skip and misses build: OK"
 )

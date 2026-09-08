@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# One realisation request for all cache-missing revisions assigned to this shard.
+set -euo pipefail
+source scripts/ci/cachix
+(( $# > 0 ))
+targets=()
+for drv in "$@"; do
+  [[ "$drv" =~ ^/nix/store/[0-9a-z]{32}-[^/]+\.drv$ ]]
+  targets+=("$drv^*")
+done
+mkdir -p _ci/pure
+roots=$(mktemp -d "$PWD/_ci/pure/shard-roots.XXXXXXXX")
+echo "$(date -u +%FT%TZ) shard realisation start: $# revisions" >&2
+nix build --max-jobs 4 "${targets[@]}" --out-link "$roots/result" --print-out-paths -L > "$roots/outputs"
+echo "$(date -u +%FT%TZ) shard realisation complete; upload start" >&2
+while IFS= read -r result; do
+  cache_push "$result"
+done < "$roots/outputs"
+echo "$(date -u +%FT%TZ) shard upload complete" >&2

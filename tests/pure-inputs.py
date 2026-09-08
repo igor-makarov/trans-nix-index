@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert fold.read(root / "larger/matrix.json") == {
         "include": [{"rev": r["rev"], "name": r["name"]} for r in revs]
     }
-    for limit in (0, 5, 1000):
+    for limit in (0, 9, 1000):
         try:
             discovery.discover(root / "bad", limit)
         except ValueError:
