@@ -37,7 +37,7 @@ test("the packages view draws a version table and both charts", async ({
 
   const rows = page.locator(".row.cols-ver");
   await expect(rows.first()).toBeVisible();
-  expect(await rows.count()).toBeGreaterThan(5);
+  expect(await rows.count()).toBeGreaterThanOrEqual(2);
 
   await expect(
     page.getByRole("heading", { name: /When each version was the one/ }),

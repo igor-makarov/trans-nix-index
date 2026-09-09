@@ -2,6 +2,10 @@
 """Offline discovery bounds and full fold coverage."""
 import importlib.util
 import json
+import io
+import tarfile
+from unittest.mock import patch
+from urllib.error import HTTPError
 from pathlib import Path
 import tempfile
 import sys
@@ -62,6 +66,61 @@ with tempfile.TemporaryDirectory() as tmp:
             pass
         else:
             raise AssertionError("missing, extra, or duplicate inputs accepted")
+    release = {
+        "26.05": {
+            "rev": "a" * 40,
+            "date": "2026-06-01",
+            "build": 1000,
+            "name": "nixos-26.05.1000." + "a" * 12,
+        }
+    }
+    discovery.prefixes = lambda prefix: {
+        "nixos/": ["12.10", "26.05-small", "26.05", "26.11", "unstable"],
+        "nixos/26.05/": [
+            "nixos-26.05.999." + "b" * 7,
+            release["26.05"]["name"],
+            "nixos-26.05beta2000." + "b" * 12,
+        ],
+        "nixos/26.11/": ["nixos-26.11beta3000." + "b" * 12],
+    }[prefix]
+    discovery.get = lambda url: (
+        ("a" * 40).encode()
+        if url.endswith("/git-revision")
+        else json.dumps(
+            {"sha": "a" * 40, "commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}
+        ).encode()
+    )
+    assert discovery.release_tips() == release
+    # Older channels lack git-revision and have ambiguous short API hashes.
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w:xz") as archive:
+        member = tarfile.TarInfo(release["26.05"]["name"] + "/nixpkgs/.git-revision")
+        member.size = 40
+        archive.addfile(member, io.BytesIO(b"a" * 40))
+
+    def legacy_get(url):
+        if url.endswith("/git-revision"):
+            raise HTTPError(url, 404, "missing", {}, None)
+        if url.endswith("/" + "a" * 12):
+            raise HTTPError(url, 422, "ambiguous", {}, None)
+        assert url.endswith("/" + "a" * 40)
+        return json.dumps(
+            {"sha": "a" * 40, "commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}
+        ).encode()
+
+    discovery.get = legacy_get
+    with patch.object(
+        discovery.urllib.request, "urlopen", return_value=io.BytesIO(payload.getvalue())
+    ):
+        assert discovery.release_tips() == release
+    discovery.get = lambda url: b"bad-sha"
+    try:
+        discovery.release_tips()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("invalid release revision accepted")
+    discovery.release_tips = lambda: release
     discovery.channels = lambda: [r["name"] for r in reversed(revs)]
     requests = []
 
@@ -83,6 +142,7 @@ with tempfile.TemporaryDirectory() as tmp:
     discovery.discover(root / "fresh", 1)
     fresh = fold.read(root / "fresh/manifest.json")
     assert fresh["revisions"] == revs[-1:]
+    assert fresh["releases"] == release
     assert len(requests) == 2
     discovery.discover(root / "larger", 3)
     assert fold.read(root / "larger/manifest.json")["revisions"] == revs

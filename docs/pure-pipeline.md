@@ -155,9 +155,13 @@ same `.drv`. Fetching remains outside the sandboxed pure computation. Direct
 `nix build` remains useful for local development but does not enforce this CI
 preflight policy.
 
-Trial release metadata is empty. Supply independently discovered release tips
-in a production manifest; full historical discovery remains a separate rollout
-step, not something the bounded revision trial performs.
+Discovery also collects the latest published tip of each release channel since
+13.10, excluding beta-only and architecture/small channels. These are metadata
+pointers (full revision, commit date, channel build and name), not extra indexed
+revisions or extraction jobs. For old archives without a git-revision object,
+ambiguous short hashes are resolved by streaming the archive's .git-revision
+metadata (no source extraction or hashing). The unstable revision limit does
+not limit release metadata.
 
 ## Local use
 
