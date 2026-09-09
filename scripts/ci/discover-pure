@@ -7,3 +7,5 @@ if [[ -n "${PIPELINE_LIMIT:-}" ]]; then
   args=(--limit "$PIPELINE_LIMIT")
 fi
 python3 tools/discover-pipeline.py _ci/pure/inputs "${args[@]}"
+# Docker runs as root; the host runner shuffles this generated plan next.
+chmod a+w _ci/pure/inputs/matrix.json
