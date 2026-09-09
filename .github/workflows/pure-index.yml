@@ -12,6 +12,10 @@ on:
         type: choice
         options: ['1', '2', '3', '4', '8', '100']
         default: '1'
+      max_shards:
+        description: 'Maximum revision shards (1–256)'
+        type: number
+        default: 256
       enrich:
         description: 'Run external cache observation (can be expensive)'
         type: boolean
@@ -24,6 +28,8 @@ on:
         description: 'Deploy after observation and browser tests'
         type: boolean
         default: false
+env:
+  PIPELINE_MAX_SHARDS: ${{ inputs.max_shards }}
 permissions:
   contents: read
 # Covers the entire graph, including optional observation and deployment.
@@ -49,6 +55,10 @@ jobs:
           persist-credentials: false
       - name: Validate rollout gates
         run: |
+          if [[ ! "$PIPELINE_MAX_SHARDS" =~ ^[1-9][0-9]{0,2}$ ]] || (( PIPELINE_MAX_SHARDS > 256 )); then
+            echo 'max_shards must be an integer from 1 to 256' >&2
+            exit 1
+          fi
           if [[ ( "$PIPELINE_DEPLOY" == true || "$PIPELINE_CENSUS" == true ) && "$PIPELINE_ENRICH" != true ]]; then
             echo 'Deployment and census require enrichment' >&2
             exit 1
@@ -56,13 +66,12 @@ jobs:
       - name: Discover bounded channel metadata
         run: bash scripts/ci/discover-pure
       - id: plan
-        name: Partition revisions into ten trial shards
-        # Temporary ten-shard trial; partitioner defaults to 256.
-        run: python3 tools/revision-shards.py plan _ci/pure/inputs/matrix.json --shards 10
+        name: Partition revisions into bounded shards
+        run: python3 tools/revision-shards.py plan _ci/pure/inputs/matrix.json --shards "$PIPELINE_MAX_SHARDS"
       - id: manifest
         uses: actions/upload-artifact@v7
         with:
-          name: pure-manifest-${{ github.run_attempt }}
+          name: revision-build-plan${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
           path: _ci/pure/inputs/
           if-no-files-found: error
           retention-days: 30
@@ -88,11 +97,11 @@ jobs:
           path: _ci/pure/inputs
       - uses: ./.github/actions/setup-nix
       - name: Skip cached revisions; build and publish missing ones
-        run: python3 tools/monitor-runner.py _ci/pure/metrics/runner.jsonl mise run nix -- develop --command python3 tools/revision-shards.py build _ci/pure/inputs/matrix.json --shards 10
+        run: python3 tools/monitor-runner.py _ci/pure/metrics/runner.jsonl mise run nix -- develop --command python3 tools/revision-shards.py build _ci/pure/inputs/matrix.json --shards "$PIPELINE_MAX_SHARDS"
       - name: Publish revision output receipts
         uses: actions/upload-artifact@v7
         with:
-          name: revision-paths-${{ github.run_attempt }}-${{ matrix.shard }}
+          name: cached-revision-paths-shard-${{ matrix.shard }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
           path: _ci/pure/inputs/revision-paths/
           if-no-files-found: error
           retention-days: 30
@@ -100,7 +109,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: runner-${{ github.run_attempt }}-${{ matrix.shard }}
+          name: resource-usage-shard-${{ matrix.shard }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
           path: _ci/pure/metrics/
           retention-days: 7
   merge:
@@ -123,7 +132,7 @@ jobs:
       - uses: ./.github/actions/setup-nix
       - uses: actions/download-artifact@v8
         with:
-          pattern: revision-paths-${{ github.run_attempt }}-*
+          pattern: cached-revision-paths-shard-*${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
           merge-multiple: true
           path: _ci/pure/inputs/revision-paths
       - name: Merge cached revisions

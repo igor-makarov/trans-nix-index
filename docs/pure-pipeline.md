@@ -20,8 +20,9 @@ One `pure-index` workflow contains the entire graph:
    Each shard submits all cache-missing
    revisions to separate extraction lanes: three output evaluations and one
    version extraction concurrently, then up to four cheap combiners. GitHub manages runner capacity.
-   The current utilization trial explicitly uses `--shards 10`; the partitioner
-   default remains 256.
+   The `max_shards` workflow input defaults to 256 (valid range: 1–256).
+   Actual shard count is capped at the revision count; `limit=8, max_shards=4`
+   assigns two revisions to each of four zero-based shards.
    Every revision is still an independent Nix derivation. Instantiated recipes,
    downloaded inputs, and built outputs are GC-rooted through publication.
 3. **merge** depends on all shards succeeding. Each shard publishes a small
