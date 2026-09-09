@@ -108,17 +108,16 @@ def channel_key(name):
     return tuple(map(int, match.groups()[:3])) if match else None
 
 
-def discover(destination, limit):
-    if not 1 <= limit <= 100:
-        raise ValueError("trial limit must be between 1 and 100 new revisions")
+def discover(destination, limit=None):
+    if limit is not None and (type(limit) is not int or limit <= 0):
+        raise ValueError("limit must be a positive integer or omitted")
     releases = release_tips()
     candidates = sorted((n for n in channels() if channel_key(n)), key=channel_key)
-    # Manual rollout selects a small complete dataset, not an incremental tail.
-    candidates = candidates[-limit:]
+    # Select a complete dataset, not an incremental tail.
+    if limit is not None:
+        candidates = candidates[-limit:]
     added = []
     for name in candidates:
-        if len(added) >= limit:
-            break
         sha = get(BASE + f"nixos/unstable/{name}/git-revision").decode().strip()
         if not re.fullmatch(r"[0-9a-f]{40}", sha):
             raise ValueError("invalid git-revision")
@@ -163,6 +162,6 @@ def discover(destination, limit):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("destination", type=Path)
-    parser.add_argument("--limit", type=int, default=1)
+    parser.add_argument("--limit", type=int)
     args = parser.parse_args()
     discover(args.destination, args.limit)

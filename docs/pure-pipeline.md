@@ -11,8 +11,11 @@ trial and enriched site have been reviewed.
 One `pure-index` workflow contains the entire graph:
 
 1. **discover** fetches S3/GitHub channel metadata, without prefetching source
-   trees. The manifest and revision plan are a GitHub run artifact. Fresh trials
-   select up to 100 recent revisions as a complete trial dataset.
+   trees except for historical release commit metadata fallback. The manifest
+   and revision plan are a GitHub run artifact. Optional `limit` selects that
+   many recent revisions; blank/omitted means unlimited. It accepts any positive
+   integer, without a rollout cap. This selects a complete dataset, not only
+   cache misses.
 2. **revisions** is a matrix of up to 256 shards, not one job per revision.
    Discovery persists a shuffled revision plan, distributed round-robin for
    balanced random shard assignment. Shards shuffle their queues and extraction

@@ -149,15 +149,19 @@ with tempfile.TemporaryDirectory() as tmp:
     assert fold.read(root / "larger/matrix.json") == {
         "include": [{"rev": r["rev"], "name": r["name"]} for r in revs]
     }
-    discovery.discover(root / "maximum", 100)
+    discovery.discover(root / "maximum", 200)
     assert fold.read(root / "maximum/manifest.json")["revisions"] == revs
-    for limit in (0, 101, 1000):
+    discovery.discover(root / "unlimited")
+    assert fold.read(root / "unlimited/manifest.json")["revisions"] == revs
+    discovery.discover(root / "large-limit", 1000)
+    assert fold.read(root / "large-limit/manifest.json")["revisions"] == revs
+    for limit in (0, -1, 1.5, True, "200"):
         try:
             discovery.discover(root / "bad", limit)
         except ValueError:
             pass
         else:
-            raise AssertionError("unbounded discovery allowed")
+            raise AssertionError("invalid limit accepted")
 print(
     "full fold, disappearance/reappearance, deterministic repeat, exact input coverage, bounded discovery: OK"
 )

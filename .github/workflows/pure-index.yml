@@ -1,5 +1,5 @@
 name: pure-index
-run-name: pure index (${{ inputs.limit }} new revisions)
+run-name: pure index (${{ inputs.limit || 'all' }} revisions)
 on:
   workflow_dispatch:
     inputs:
@@ -8,10 +8,9 @@ on:
         type: string
         default: ''
       limit:
-        description: 'Maximum new revisions during rollout'
-        type: choice
-        options: ['1', '2', '3', '4', '8', '100']
-        default: '1'
+        description: 'Maximum recent revisions (positive integer; blank = unlimited)'
+        type: string
+        default: ''
       max_shards:
         description: 'Maximum revision and enrichment shards (1–256)'
         type: number

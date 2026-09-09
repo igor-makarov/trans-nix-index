@@ -2,5 +2,8 @@
 # Discovery emits a plain plan for a GitHub run artifact, not a Nix output.
 set -euo pipefail
 mkdir -p _ci/pure
-args=(--limit "${PIPELINE_LIMIT:-1}")
+args=()
+if [[ -n "${PIPELINE_LIMIT:-}" ]]; then
+  args=(--limit "$PIPELINE_LIMIT")
+fi
 python3 tools/discover-pipeline.py _ci/pure/inputs "${args[@]}"
