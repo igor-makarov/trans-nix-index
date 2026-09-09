@@ -63,6 +63,7 @@ docker run --rm --init --name "$name" \
   --env EVAL_WORKERS --env CACHIX_AUTH_TOKEN \
   --env PIPELINE_INPUTS --env PIPELINE_PREVIOUS --env PIPELINE_REVISION --env PIPELINE_REVISION_NAME \
   --env PIPELINE_LIMIT --env PIPELINE_CENSUS --env PIPELINE_RESULT --env PIPELINE_SHARD \
+  --env PIPELINE_SHARDS --env PIPELINE_ENRICH_SHARDS --env ENRICH_THREADS \
   --env "NIX_CONFIG=$config" \
   --entrypoint /bin/sh nixos/nix:latest -c '
     parent=$$

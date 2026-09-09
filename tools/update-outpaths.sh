@@ -54,6 +54,7 @@ EVAL="$MT/index/.eval"
 
 MODE=incremental
 SHARD=0
+COLLECT_ONLY=0
 PURE_EVALUATIONS=""
 # Every system the artifacts are published for. A system listed here without an
 # evaluation simply produces no entries, so adding one is a matter of running
@@ -63,6 +64,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --full) MODE=full; shift ;;
     --shard) SHARD=1; shift ;;
+    --collect-only) COLLECT_ONLY=1; shift ;;
     --systems) SYSTEMS="$2"; shift 2 ;;
     --evaluations) PURE_EVALUATIONS="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -141,7 +143,8 @@ elif ! bash "$HERE/eval-outpaths.sh" --offsets "$OFFSETS" --system "$SYSTEMS"; t
   echo "update-outpaths: some (revision, system) pairs did not evaluate; joining what did"
 fi
 
-# 3. Join evaluations against listings, one set of artifacts per system.
+# 3. Join evaluations against listings and crawl references in one HTTP queue.
+#    One set of artifacts per system; requests are shared across all systems.
 #    Incremental hands the join the previously published files, so every pair
 #    that closed before them is carried over rather than resolved again.
 PREV_ARG=()
@@ -151,7 +154,7 @@ fi
 stage python3 "$HERE/join-eval-listing.py" \
   --revisions "$MT/revisions.json" --versions "$MT/index/versions.json" \
   --eval-dir "$EVAL" --paths-dir "$PATHS" --systems "$SYSTEMS" \
-  --threads "${ENRICH_PROBE_THREADS:-256}" \
+  --threads "${ENRICH_THREADS:-128}" --crawl \
   --out-dir "$DATA" --graph "$GRAPH" --probe-cache "${PREV_ARG[@]}"
 
 # Every system's artifacts, as the crawl and consolidation seeds: the graph
@@ -161,12 +164,11 @@ for system in ${SYSTEMS//,/ }; do
   SEEDS+=("$DATA/outpaths-$system.json" "$DATA/tip-outpaths-$system.json")
 done
 
-# 4. Crawl narinfos for digests the graph has never seen: newly resolved
-#    versions and their transitive references. A runner that restored no graph
-#    re-crawls all of them, which is minutes — the graph carries fetched
-#    records only, so there is nothing else to start from.
-stage python3 "$HERE/crawl-narinfos.py" --seeds "${SEEDS[@]}" --graph "$GRAPH" \
-  --threads "${ENRICH_CRAWL_THREADS:-64}"
+# 4. The join's shared queue has already crawled these seeds and references.
+
+if [ "$COLLECT_ONLY" -eq 1 ]; then
+  exit 0
+fi
 
 # 5. Consolidate the graph into the three artifact files. The previously
 #    published copies (restored into $DATA/prev-shards by the workflow) are the

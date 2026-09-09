@@ -7,9 +7,12 @@ import time
 CACHE_HOST = "cache.nixos.org"
 USER_AGENT = "nixpkgs-multiverse"
 RETRIES = 3
-TIMEOUT_SECONDS = 30
+# Temporary benchmark timeout; revisit after measuring retry/latency tails.
+TIMEOUT_SECONDS = 120
 DIGEST_LEN = 32
 _local = threading.local()
+_metrics_lock = threading.Lock()
+metrics = {"attempts": 0, "retries": 0, "transportErrors": 0}
 
 
 def reset_connection():
@@ -48,10 +51,18 @@ def parse_narinfo(text):
 
 def fetch(digest):
     for attempt in range(RETRIES):
+        with _metrics_lock:
+            metrics["attempts"] += 1
+            metrics["retries"] += int(attempt > 0)
         try:
             conn = get_connection()
             conn.request(
-                "GET", f"/{digest}.narinfo", headers={"User-Agent": USER_AGENT}
+                "GET",
+                f"/{digest}.narinfo",
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Cache-Control": "max-age=3600",
+                },
             )
             r = conn.getresponse()
             body = r.read()
@@ -64,6 +75,8 @@ def fetch(digest):
             # transient (429/5xx): retry on a fresh connection
             reset_connection()
         except Exception:
+            with _metrics_lock:
+                metrics["transportErrors"] += 1
             reset_connection()
         time.sleep(0.5 * (attempt + 1))
     return {"d": digest, "ok": False, "err": True}

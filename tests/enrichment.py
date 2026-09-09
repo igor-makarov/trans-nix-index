@@ -113,3 +113,69 @@ assert peak == 2
 print(
     "Enrichment: continuous queue, deduplication, budgets, resume, retries, probe reuse: OK"
 )
+
+from narinfo_queue import NarinfoQueue
+
+with tempfile.TemporaryDirectory() as tmp:
+    graph = Path(tmp) / "unified.jsonl"
+    calls = []
+    child_started = threading.Event()
+
+    def unified_get(d):
+        calls.append(d)
+        if d == "slow":
+            assert child_started.wait(5), "crawl blocked behind probe barrier"
+        if d == "child":
+            child_started.set()
+        return {"d": d, "ok": d != "missing", "refs": ["child"] if d == "fast" else []}
+
+    queue = NarinfoQueue(graph, 2, get=unified_get)
+    fast = queue.request("fast")
+    slow = queue.request("slow")
+    assert queue.request("fast") is fast
+    assert slow.result(timeout=10)["ok"]
+    assert queue.request("child").result()["ok"]
+    missing = queue.request("missing")
+    assert not missing.result()["ok"]
+    assert queue.request("missing") is missing
+    queue.close()
+    assert sorted(calls) == ["child", "fast", "missing", "slow"]
+    calls.clear()
+    queue = NarinfoQueue(graph, 2, get=unified_get)
+    queue.seed({"fast", "slow"})
+    assert queue.request("fast").result()["ok"]  # Fresh root probe on a new run.
+    queue.close()
+    assert calls == ["fast"]
+print(
+    "Unified queue: live dependency expansion, single-flight, cached 404s, resume: OK"
+)
+
+# Equal-size multi-output candidates must be independent of arrival order.
+import subprocess
+
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    seeds = root / "seeds.json"
+    seeds.write_text(json.dumps({"attrs": {"pkg": {"1": ["root"]}}}))
+    rows = [dict(d=d, ok=True, name="pkg-1-doc", ns=10, refs=[]) for d in ["a", "b"]]
+    outputs = []
+    for index, records in enumerate([rows, rows[::-1]]):
+        graph = root / f"graph-{index}"
+        graph.write_text("".join(json.dumps(r) + "\n" for r in records))
+        out = root / f"out-{index}"
+        subprocess.run(
+            [
+                sys.executable,
+                str(Path(sys.argv[1]) / "extract-outputs.py"),
+                "--seeds",
+                str(seeds),
+                "--graph",
+                str(graph),
+                "--out",
+                str(out),
+            ],
+            check=True,
+        )
+        outputs.append(json.loads(out.read_text()))
+    assert outputs[0] == outputs[1]
+print("Output representative is independent of request completion order: OK")

@@ -18,8 +18,12 @@ if [[ -n "${PIPELINE_PREVIOUS:-}" ]]; then
   mode=()
 fi
 systems=$(nix eval --json --file nix/revision-systems.nix | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)))')
-bash tools/update-outpaths.sh "${mode[@]}" --systems "$systems" \
-  --evaluations "$PIPELINE_RESULT/evaluations"
+if [[ -n "${PIPELINE_ENRICH_SHARDS:-}" ]]; then
+  bash scripts/ci/merge-enrichment
+else
+  bash tools/update-outpaths.sh "${mode[@]}" --systems "$systems" \
+    --evaluations "$PIPELINE_RESULT/evaluations"
+fi
 if [[ "${PIPELINE_CENSUS:-false}" == true ]]; then
   bash scripts/ci/observe-census
 fi

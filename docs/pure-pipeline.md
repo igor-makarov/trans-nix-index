@@ -22,27 +22,39 @@ One `pure-index` workflow contains the entire graph:
    version extraction concurrently, then up to four cheap combiners. GitHub manages runner capacity.
    The `max_shards` workflow input defaults to 256 (valid range: 1–256).
    Actual shard count is capped at the revision count; `limit=8, max_shards=4`
-   assigns two revisions to each of four zero-based shards.
+   assigns two revisions to each of four zero-based shards. Both revision and
+   enrichment jobs use GitHub's `strategy.job-index` and `strategy.job-total`;
+   only discovery uses `max_shards` to construct the matrix.
    Every revision is still an independent Nix derivation. Instantiated recipes,
    downloaded inputs, and built outputs are GC-rooted through publication.
-3. **merge** depends on all shards succeeding. Each shard publishes a small
+3. **merge revisions** depends on all shards succeeding. Each shard publishes a small
    GitHub artifact mapping revision SHAs to final JSON store paths. Merge
    validates exact manifest coverage, downloads and roots those cached inputs
    with builds disabled, then folds them into the version index, history, and
    statistics. It never reconstructs extraction recipes or fetches their nixpkgs
    source trees. No live availability probes.
-4. **enrich** optionally performs channel membership, narinfo, reference-graph,
-   and closure observation. Optional census uses `scripts/ci/observe-census`,
-   also shared by the legacy workflow.
-5. **pages** runs only when deployment is explicitly requested; it builds and
+4. **enrichment shard N** optionally checks output presence and recursively
+   crawls dependencies. It reuses the revision matrix count, but partitions
+   package attributes using a deterministic shuffle seeded by the full index.
+   Each shard publishes `enrichment-observations-shard-N` and
+   `enrichment-resource-usage-shard-N` artifacts (retry suffixes only after
+   attempt one). HTTP observations are not cached as Nix derivation results.
+   Deduplication is per runner; shared dependencies may be fetched by multiple shards.
+5. **merge enrichment** validates exact shard coverage and input identity,
+   merges output mappings and graph records, rejects conflicting observations,
+   then calculates closures globally and packages the snapshot. Optional census
+   uses `scripts/ci/observe-census`, also shared by the legacy workflow.
+6. **pages** runs only when deployment is explicitly requested; it builds and
    browser-tests the enriched snapshot before deploying.
 
-Enrichment availability checks share one HTTP pool across all platforms,
-with digest deduplication across primary and sibling outputs. The default is
-256 workers (`ENRICH_PROBE_THREADS` overrides it). Dependency crawling uses a
-separate continuous queue with 64 workers (`ENRICH_CRAWL_THREADS`). Probe
-metadata feeds the crawl graph, avoiding repeated downloads. Neither pool
-fetches package payloads. Stage durations and exit codes are appended to
+Enrichment output probes and recursive dependency discovery share one bounded
+HTTP queue across all platforms. The default is 128 workers (`ENRICH_THREADS`
+overrides it). In-flight and completed requests are deduplicated by digest,
+including observed 404s. Output probes refresh observations each invocation;
+dependency metadata can resume from the saved graph. Transport failures are
+retryable but never checkpointed as absence. Requests allow HTTP cache responses
+up to one hour old; the temporary benchmark timeout is 120 seconds. The queue
+fetches no package payloads. Stage durations and exit codes are appended to
 `index/.outpaths/timings.tsv` under the enrichment working directory.
 These are local benchmark-based defaults, not guaranteed optimal on every runner.
 

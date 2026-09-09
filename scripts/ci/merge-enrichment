@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Merge impure shard artifacts, then calculate closures over the complete graph.
+set -euo pipefail
+: "${MULTIVERSE_ROOT:?}" "${PIPELINE_ENRICH_SHARDS:?}" "${PIPELINE_SHARDS:?}"
+work="$MULTIVERSE_ROOT/index/.outpaths"
+count="$PIPELINE_SHARDS"
+systems=$(nix eval --json --file nix/revision-systems.nix | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)))')
+python3 tools/enrichment-shards.py merge --index "$MULTIVERSE_ROOT/index/versions.json" \
+  --shards "$count" --inputs "$PIPELINE_ENRICH_SHARDS" --output "$work" --systems "$systems"
+seeds=()
+for system in ${systems//,/ }; do
+  seeds+=("$work/data/outpaths-$system.json" "$work/data/tip-outpaths-$system.json")
+done
+extra=()
+if [[ -f "$work/data/manifest-meta.pkl" ]]; then extra+=(--manifest-meta "$work/data/manifest-meta.pkl"); fi
+if [[ -d "$work/data/prev-shards" ]]; then extra+=(--prev-dir "$work/data/prev-shards"); fi
+python3 tools/consolidate-outpaths.py --seeds "${seeds[@]}" --graph "$work/graph.jsonl" "${extra[@]}" --out-dir "$work/data"
+extra=()
+if [[ -f "$work/data/prev-shards/outs-indexed.json" ]]; then extra+=(--prev "$work/data/prev-shards/outs-indexed.json"); fi
+python3 tools/extract-outputs.py --seeds "${seeds[@]}" --graph "$work/graph.jsonl" "${extra[@]}" --out "$work/data/outs-indexed.json"

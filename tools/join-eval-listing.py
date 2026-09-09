@@ -345,7 +345,7 @@ def join(args):
     return 0
 
 
-def run_joins(jobs, threads, probe=in_cache):
+def run_joins(jobs, threads, probe=in_cache, crawler=None):
     """Two shared queues: primary paths, then siblings of successful primaries.
 
     Platform generators hold only their join state; all HTTP work uses one pool.
@@ -363,7 +363,15 @@ def run_joins(jobs, threads, probe=in_cache):
             digests = sorted(
                 set().union(*(needed for _, needed in pending)) - verdicts.keys()
             )
-            verdicts.update(zip(digests, pool.map(probe, digests)))
+            if crawler is None:
+                verdicts.update(zip(digests, pool.map(probe, digests)))
+            else:
+                requests = {d: crawler.request(d) for d in digests}
+                for digest, future in requests.items():
+                    rec = future.result()
+                    if rec.get("err"):
+                        raise RuntimeError(f"narinfo probe exhausted retries: {digest}")
+                    verdicts[digest] = rec["ok"]
             following = []
             for job, _ in pending:
                 try:
@@ -384,7 +392,7 @@ def main():
     systems.add_argument(
         "--systems", help="comma-separated platforms sharing one probe queue"
     )
-    ap.add_argument("--threads", type=int, default=256)
+    ap.add_argument("--threads", type=int, default=128)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument(
         "--prev-dir",
@@ -399,7 +407,14 @@ def main():
         "pair when the narinfo is there",
     )
     ap.add_argument("--graph", help="append probe metadata for subsequent crawling")
+    ap.add_argument(
+        "--crawl",
+        action="store_true",
+        help="share the probe queue with recursive dependency crawling",
+    )
     args = ap.parse_args()
+    if args.crawl and not args.graph:
+        ap.error("--crawl requires --graph")
     if args.threads < 1:
         ap.error("--threads must be positive")
     names = args.systems.split(",") if args.systems else [args.system]
@@ -414,7 +429,28 @@ def main():
     jobs = [
         join(argparse.Namespace(**(vars(args) | {"system": name}))) for name in names
     ]
-    run_joins(jobs, args.threads)
+    if args.crawl:
+        from narinfo_queue import NarinfoQueue
+
+        crawler = NarinfoQueue(args.graph, args.threads)
+        try:
+            run_joins(jobs, args.threads, crawler=crawler)
+            for name in names:
+                for prefix in ("outpaths", "tip-outpaths"):
+                    data = json.load(
+                        open(os.path.join(args.out_dir, f"{prefix}-{name}.json"))
+                    )
+                    crawler.seed(
+                        {
+                            row[0]
+                            for versions in data["attrs"].values()
+                            for row in versions.values()
+                        }
+                    )
+        finally:
+            crawler.close()
+    else:
+        run_joins(jobs, args.threads)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 name: pure-index
-run-name: Pure index (${{ inputs.limit }} new revisions)
+run-name: pure index (${{ inputs.limit }} new revisions)
 on:
   workflow_dispatch:
     inputs:
@@ -13,7 +13,7 @@ on:
         options: ['1', '2', '3', '4', '8', '100']
         default: '1'
       max_shards:
-        description: 'Maximum revision shards (1–256)'
+        description: 'Maximum revision and enrichment shards (1–256)'
         type: number
         default: 256
       enrich:
@@ -77,7 +77,7 @@ jobs:
           retention-days: 30
   revisions:
     needs: discover
-    name: Revision shard ${{ matrix.shard }}
+    name: revision shard ${{ strategy.job-index }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
     strategy:
@@ -85,7 +85,8 @@ jobs:
       matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
     env:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      PIPELINE_SHARD: ${{ matrix.shard }}
+      PIPELINE_SHARD: ${{ strategy.job-index }}
+      PIPELINE_SHARDS: ${{ strategy.job-total }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -97,11 +98,11 @@ jobs:
           path: _ci/pure/inputs
       - uses: ./.github/actions/setup-nix
       - name: Skip cached revisions; build and publish missing ones
-        run: python3 tools/monitor-runner.py _ci/pure/metrics/runner.jsonl mise run nix -- develop --command python3 tools/revision-shards.py build _ci/pure/inputs/matrix.json --shards "$PIPELINE_MAX_SHARDS"
+        run: python3 tools/monitor-runner.py _ci/pure/metrics/runner.jsonl mise run nix -- develop --command python3 tools/revision-shards.py build _ci/pure/inputs/matrix.json --shards "$PIPELINE_SHARDS"
       - name: Publish revision output receipts
         uses: actions/upload-artifact@v7
         with:
-          name: cached-revision-paths-shard-${{ matrix.shard }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
+          name: cached-revision-paths-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
           path: _ci/pure/inputs/revision-paths/
           if-no-files-found: error
           retention-days: 30
@@ -109,10 +110,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: resource-usage-shard-${{ matrix.shard }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
+          name: resource-usage-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
           path: _ci/pure/metrics/
           retention-days: 7
-  merge:
+  merge_revisions:
+    name: merge revisions
     needs: [discover, revisions]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
@@ -142,8 +144,45 @@ jobs:
           echo "path=$(cat _ci/pure/result-path)" >> "$GITHUB_OUTPUT"
           echo "Pure Cachix result — $(cat _ci/pure/result-path)" >> "$GITHUB_STEP_SUMMARY"
   enrich:
-    name: Enrich cache metadata
-    needs: merge
+    name: enrichment shard ${{ strategy.job-index }}
+    needs: [discover, merge_revisions]
+    if: inputs.enrich
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    env:
+      PIPELINE_RESULT: ${{ needs.merge_revisions.outputs.result }}
+      PIPELINE_PREVIOUS: ${{ inputs.observation_previous }}
+      PIPELINE_SHARD: ${{ strategy.job-index }}
+      PIPELINE_SHARDS: ${{ strategy.job-total }}
+    outputs:
+      shards: ${{ strategy.job-total }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix
+      - name: crawl assigned package roots and dependencies
+        run: python3 tools/monitor-runner.py _ci/pure/enrichment-metrics/runner.jsonl mise run nix -- develop --command bash scripts/ci/enrich-shard
+      - name: publish enrichment observations
+        uses: actions/upload-artifact@v7
+        with:
+          name: enrichment-observations-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
+          path: _ci/pure/enrichment-artifacts/
+          if-no-files-found: error
+          retention-days: 7
+      - name: publish enrichment resource usage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: enrichment-resource-usage-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
+          path: _ci/pure/enrichment-metrics/
+          retention-days: 7
+  merge_enrichment:
+    name: merge enrichment
+    needs: [merge_revisions, enrich]
     if: inputs.enrich
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
@@ -151,7 +190,9 @@ jobs:
       result: ${{ steps.result.outputs.path }}
     env:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      PIPELINE_RESULT: ${{ needs.merge.outputs.result }}
+      PIPELINE_RESULT: ${{ needs.merge_revisions.outputs.result }}
+      PIPELINE_ENRICH_SHARDS: /workspace/_ci/pure/enrichment-artifacts
+      PIPELINE_SHARDS: ${{ needs.enrich.outputs.shards }}
       PIPELINE_PREVIOUS: ${{ inputs.observation_previous }}
       PIPELINE_CENSUS: ${{ inputs.census }}
     steps:
@@ -159,14 +200,19 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-nix
-      - name: Enrich cache metadata and optionally census payloads
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: enrichment-observations-shard-*${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
+          merge-multiple: true
+          path: _ci/pure/enrichment-artifacts
+      - name: merge observations and optionally census payloads
         run: mise run nix -- develop --command bash scripts/ci/enrich-pure
       - id: result
         run: |
           echo "path=$(cat _ci/pure/result-path)" >> "$GITHUB_OUTPUT"
           echo "Enriched Cachix result — $(cat _ci/pure/result-path)" >> "$GITHUB_STEP_SUMMARY"
   pages:
-    needs: enrich
+    needs: merge_enrichment
     if: inputs.deploy
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
@@ -182,7 +228,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     env:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      PIPELINE_RESULT: ${{ needs.enrich.outputs.result }}
+      PIPELINE_RESULT: ${{ needs.merge_enrichment.outputs.result }}
     steps:
       - uses: actions/checkout@v7
         with:

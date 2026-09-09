@@ -8,6 +8,11 @@
   revision-paths = pkgs.runCommand "check-revision-paths" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 ${../tests/revision-paths.py} ${../tools/prepare-revision-paths.py} | tee "$out"
   '';
+  enrichment-shards =
+    pkgs.runCommand "check-enrichment-shards" { nativeBuildInputs = [ pkgs.python3 ]; }
+      ''
+        python3 ${../tests/enrichment-shards.py} ${../tools} | tee "$out"
+      '';
   enrichment = pkgs.runCommand "check-enrichment" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 ${../tests/enrichment.py} ${../tools} | tee "$out"
   '';

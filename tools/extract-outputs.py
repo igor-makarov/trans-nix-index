@@ -90,7 +90,8 @@ def main():
         best = {}
         for e in lst:
             cur = best.get(e[0])
-            if cur is None or (e[2] or 0) > (cur[2] or 0):
+            # Equal-size rebuilds must not depend on HTTP completion order.
+            if cur is None or ((e[2] or 0), e[1]) > ((cur[2] or 0), cur[1]):
                 best[e[0]] = e
         outs[base] = sorted(best.values())
 
