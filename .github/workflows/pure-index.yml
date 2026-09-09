@@ -110,7 +110,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: resource-usage-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
+          name: resource-usage-revision-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
           path: _ci/pure/metrics/
           retention-days: 7
   merge_revisions:
@@ -177,7 +177,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: enrichment-resource-usage-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
+          name: resource-usage-enrichment-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
           path: _ci/pure/enrichment-metrics/
           retention-days: 7
   merge_enrichment:

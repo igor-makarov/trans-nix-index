@@ -37,7 +37,7 @@ One `pure-index` workflow contains the entire graph:
    crawls dependencies. It reuses the revision matrix count, but partitions
    package attributes using a deterministic shuffle seeded by the full index.
    Each shard publishes `enrichment-observations-shard-N` and
-   `enrichment-resource-usage-shard-N` artifacts (retry suffixes only after
+   `resource-usage-enrichment-shard-N` artifacts (retry suffixes only after
    attempt one). HTTP observations are not cached as Nix derivation results.
    Deduplication is per runner; shared dependencies may be fetched by multiple shards.
 5. **merge enrichment** validates exact shard coverage and input identity,
