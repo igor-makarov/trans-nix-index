@@ -56,8 +56,10 @@ One `pure-index` workflow contains the entire graph:
    browser-tests the enriched snapshot before deploying.
 
 Enrichment output probes and recursive dependency discovery share one bounded
-HTTP queue across all platforms. The default is 128 workers (`ENRICH_THREADS`
-overrides it). In-flight and completed requests are deduplicated by digest,
+async HTTP/2 queue across all platforms. The default is 2,048 async workers
+(`ENRICH_THREADS` overrides it; this counts tasks, not OS threads). Crawl state,
+checkpoint writes and transport counters are owned by one event loop. A small
+synchronous adapter serves the existing join coordinator. In-flight and completed requests are deduplicated by digest,
 including observed 404s. Output probes refresh observations each invocation;
 dependency metadata can resume from the saved graph. Transport failures are
 retryable but never checkpointed as absence. Requests allow HTTP cache responses

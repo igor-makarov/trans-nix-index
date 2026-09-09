@@ -154,7 +154,7 @@ fi
 stage python3 "$HERE/join-eval-listing.py" \
   --revisions "$MT/revisions.json" --versions "$MT/index/versions.json" \
   --eval-dir "$EVAL" --paths-dir "$PATHS" --systems "$SYSTEMS" \
-  --threads "${ENRICH_THREADS:-128}" --crawl \
+  --threads "${ENRICH_THREADS:-2048}" --crawl \
   --out-dir "$DATA" --graph "$GRAPH" --probe-cache "${PREV_ARG[@]}"
 
 # Every system's artifacts, as the crawl and consolidation seeds: the graph

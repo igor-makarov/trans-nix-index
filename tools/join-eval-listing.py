@@ -392,7 +392,7 @@ def main():
     systems.add_argument(
         "--systems", help="comma-separated platforms sharing one probe queue"
     )
-    ap.add_argument("--threads", type=int, default=128)
+    ap.add_argument("--threads", type=int, default=2048)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument(
         "--prev-dir",

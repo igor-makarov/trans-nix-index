@@ -13,9 +13,19 @@
       ''
         python3 ${../tests/enrichment-shards.py} ${../tools} | tee "$out"
       '';
-  enrichment = pkgs.runCommand "check-enrichment" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-    python3 ${../tests/enrichment.py} ${../tools} | tee "$out"
-  '';
+  enrichment =
+    pkgs.runCommand "check-enrichment"
+      {
+        nativeBuildInputs = [
+          (pkgs.python3.withPackages (p: [
+            p.httpx
+            p.h2
+          ]))
+        ];
+      }
+      ''
+        python3 ${../tests/enrichment.py} ${../tools} | tee "$out"
+      '';
   pure-pipeline = import ../tests/pure-pipeline.nix { inherit pkgs; };
   prepare-merge = pkgs.runCommand "check-prepare-merge" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 ${../tests/prepare-merge.py} ${../tools/prepare-merge.py} | tee "$out"

@@ -115,16 +115,35 @@ print(
 )
 
 from narinfo_queue import NarinfoQueue
+from narinfo_async import AsyncPool
+
+
+# Initialization failures must not strand the non-daemon event-loop thread.
+async def fail_start(self):
+    raise FileNotFoundError("test TLS initialization failure")
+
+
+before = set(threading.enumerate())
+with tempfile.TemporaryDirectory() as tmp, patch.object(AsyncPool, "start", fail_start):
+    try:
+        NarinfoQueue(Path(tmp) / "graph.jsonl")
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("startup failure was swallowed")
+assert set(threading.enumerate()) == before, "startup leaked a thread"
 
 with tempfile.TemporaryDirectory() as tmp:
     graph = Path(tmp) / "unified.jsonl"
     calls = []
-    child_started = threading.Event()
+    import asyncio
 
-    def unified_get(d):
+    child_started = asyncio.Event()
+
+    async def unified_get(d):
         calls.append(d)
         if d == "slow":
-            assert child_started.wait(5), "crawl blocked behind probe barrier"
+            await asyncio.wait_for(child_started.wait(), 5)
         if d == "child":
             child_started.set()
         return {"d": d, "ok": d != "missing", "refs": ["child"] if d == "fast" else []}
