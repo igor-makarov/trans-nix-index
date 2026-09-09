@@ -80,7 +80,9 @@ in
       {
         nativeBuildInputs = [ pkgs.python3 ];
         # A revision JSON must never retain source trees or extraction dependencies.
-        allowedReferences = [ ];
+        __structuredAttrs = true;
+        unsafeDiscardReferences.out = true;
+        outputChecks.out.allowedReferences = [ ];
       }
       ''
         python3 ${../tools/combine-revision.py} ${versions} \

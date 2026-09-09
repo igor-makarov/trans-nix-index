@@ -32,7 +32,12 @@ One `pure-index` workflow contains the entire graph:
    validates exact manifest coverage, downloads and roots those cached inputs
    with builds disabled, then folds them into the version index, history, and
    statistics. It never reconstructs extraction recipes or fetches their nixpkgs
-   source trees. No live availability probes.
+   source trees. One merge derivation writes real `index/` and `evaluations/`
+   directories, not a symlink wrapper. Published revision JSONs and the merged
+   directory use structured `unsafeDiscardReferences.out = true` with an empty
+   allowed-reference check: package hashes remain verbatim data, but downloads
+   retain no build dependencies. Intermediate extraction recipes are unchanged.
+   No live availability probes.
 4. **enrichment shard N** optionally checks output presence and recursively
    crawls dependencies. It reuses the revision matrix count, but partitions
    package attributes using a deterministic shuffle seeded by the full index.

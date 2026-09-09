@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Dry-run parser and derivation-driven preflight checks, no network/builds."""
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -38,6 +39,8 @@ recipe = {
     },
 }
 m.allowed([drv], {drv: recipe})
+m.allowed([drv], {drv: {"structuredAttrs": {m.MARKER: "1"}}})
+m.allowed([drv], {drv: {"env": {"__json": json.dumps({m.MARKER: "1"})}}})
 try:
     m.allowed([dep], {dep: {"env": {"name": "revision-index"}}})
 except ValueError:

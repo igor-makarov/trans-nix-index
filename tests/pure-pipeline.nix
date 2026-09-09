@@ -48,6 +48,18 @@ let
     versionSystem = pkgs.stdenv.hostPlatform.system;
   };
   expected = builtins.unsafeDiscardStringContext pkgs.hello.outPath;
+  # A real builder dependency deliberately appears as JSON data.
+  collision = direct.all.overrideAttrs (_: {
+    buildCommand = ''printf '"%s"' '${pkgs.bash}' > "$out"'';
+  });
+  closure = pkgs.closureInfo {
+    rootPaths = [
+      pipeline.all
+      again.all
+      direct.all
+      collision
+    ];
+  };
 in
 assert direct.all.drvPath == pipeline.perRevision.${revision.name}.all.drvPath;
 assert
@@ -62,6 +74,12 @@ pkgs.runCommand "check-pure-pipeline" { nativeBuildInputs = [ pkgs.python3 ]; } 
   import json, pathlib, sys
   first, second = map(pathlib.Path, sys.argv[1:3])
   load = lambda p: json.loads(p.read_text())
+  assert not (first / 'index').is_symlink()
+  assert not (first / 'evaluations').is_symlink()
+  assert load(pathlib.Path('${collision}')) == '${pkgs.bash}'
+  assert set(pathlib.Path('${closure}/store-paths').read_text().splitlines()) == {
+      '${pipeline.all}', '${again.all}', '${direct.all}', '${collision}'
+  }
   a = load(first / 'index/versions.json')
   assert a == {'revisionCount': 1, 'attrs': {'hello': {'1': None}, 'jetbrains.idea': {'2': None}}}, a
   b = load(second / 'index/history.json')

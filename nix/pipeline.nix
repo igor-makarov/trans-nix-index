@@ -48,27 +48,27 @@ let
       )
     )
   );
-  index = mergeOnly (
-    pkgs.runCommand "revision-index"
+  all = mergeOnly (
+    pkgs.runCommand "pure-index-pipeline"
       {
         nativeBuildInputs = [
           pkgs.python3
           pkgs.bash
         ];
+        __structuredAttrs = true;
+        unsafeDiscardReferences.out = true;
+        outputChecks.out.allowedReferences = [ ];
       }
       ''
-        python3 ${../tools/merge-revisions.py} ${manifestFile} ${files} "$out"
+        mkdir "$out"
+        python3 ${../tools/merge-revisions.py} ${manifestFile} ${files} "$out/index"
         mkdir work work/index
-        cp "$out/revisions.json" work/
-        cp "$out/history.json" work/index/
+        cp "$out/index/revisions.json" work/
+        cp "$out/index/history.json" work/index/
         MULTIVERSE_ROOT="$PWD/work" bash ${../tools/build-stats.sh}
-        cp work/index/stats.json "$out/"
+        cp work/index/stats.json "$out/index/"
+        python3 ${../tools/split-revision-evaluations.py} ${files} "$out/evaluations"
       ''
-  );
-  evaluations = mergeOnly (
-    pkgs.runCommand "revision-evaluations" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-      python3 ${../tools/split-revision-evaluations.py} ${files} "$out"
-    ''
   );
 in
 assert manifest.schema == 1;
@@ -80,17 +80,7 @@ assert systems != [ ];
 assert builtins.length (pkgs.lib.unique (map (r: r.rev) revisions)) == builtins.length revisions;
 assert builtins.length (pkgs.lib.unique (map (r: r.name) revisions)) == builtins.length revisions;
 {
-  inherit perRevision index evaluations;
-  all = mergeOnly (
-    pkgs.linkFarm "pure-index-pipeline" [
-      {
-        name = "index";
-        path = index;
-      }
-      {
-        name = "evaluations";
-        path = evaluations;
-      }
-    ]
-  );
+  inherit perRevision all;
+  index = "${all}/index";
+  evaluations = "${all}/evaluations";
 }

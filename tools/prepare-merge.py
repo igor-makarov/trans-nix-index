@@ -61,7 +61,15 @@ def show(paths):
 
 
 def allowed(builds, recipes):
-    forbidden = [p for p in builds if recipes[p].get("env", {}).get(MARKER) != "1"]
+    def marker(recipe):
+        if "structuredAttrs" in recipe:
+            return recipe["structuredAttrs"].get(MARKER)
+        env = recipe.get("env", {})
+        if "__json" in env:
+            return json.loads(env["__json"]).get(MARKER)
+        return env.get(MARKER)
+
+    forbidden = [p for p in builds if marker(recipes[p]) != "1"]
     if forbidden:
         raise ValueError(
             "Merge requires prebuilt inputs; refusing to build:\n"
