@@ -30,9 +30,19 @@
       ''
         python3 ${../tests/shard-build-lanes.py} ${../tools} | tee "$out"
       '';
-  pure-inputs = pkgs.runCommand "check-pure-inputs" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-    python3 ${../tests/pure-inputs.py} ${../tools} | tee "$out"
-  '';
+  pure-inputs =
+    pkgs.runCommand "check-pure-inputs"
+      {
+        nativeBuildInputs = [
+          (pkgs.python3.withPackages (p: [
+            p.httpx
+            p.h2
+          ]))
+        ];
+      }
+      ''
+        python3 ${../tests/pure-inputs.py} ${../tools} | tee "$out"
+      '';
   ci =
     pkgs.runCommand "check-ci"
       {

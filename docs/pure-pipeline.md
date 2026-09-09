@@ -161,10 +161,19 @@ preflight policy.
 Discovery also collects the latest published tip of each release channel since
 13.10, excluding beta-only and architecture/small channels. These are metadata
 pointers (full revision, commit date, channel build and name), not extra indexed
-revisions or extraction jobs. For old archives without a git-revision object,
-ambiguous short hashes are resolved by streaming the archive's .git-revision
-metadata (no source extraction or hashing). The unstable revision limit does
-not limit release metadata.
+revisions or extraction jobs. For old releases without a git-revision object,
+the full SHA is read by streaming the archive's .git-revision metadata (no
+source extraction or hashing). The unstable revision limit does not limit
+release metadata. Missing unstable git-revision files fail discovery; this
+fallback is release-only.
+
+Discovery uses one async HTTPX client with HTTP/2 enabled and default connection
+pool limits, without an application concurrency cap. Build files come from
+releases.nixos.org; paginated listings still use the S3 API with HTTP/1.1 fallback.
+Commit metadata requests are deduplicated by SHA within the run. GitHub tokens
+are sent only to the GitHub commit API. Failed discovery writes no input bundle.
+The workflow runs discovery through mise's Docker/Nix environment, including
+HTTPX and h2 dependencies. No GHCR metadata cache is used.
 
 ## Local use
 

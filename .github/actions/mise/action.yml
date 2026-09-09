@@ -1,4 +1,4 @@
-name: Set up Nix wrapper
+name: mise
 description: Install mise for the Docker-based Nix wrapper.
 runs:
   using: composite

@@ -22,6 +22,6 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: ./.github/actions/setup-nix
+      - uses: ./.github/actions/mise
       - name: Restore latest snapshot, update incrementally, publish OCI artifact
         run: mise run nix -- develop --command bash scripts/ci/update

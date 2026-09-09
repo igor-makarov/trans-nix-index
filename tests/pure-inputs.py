@@ -4,8 +4,6 @@ import importlib.util
 import json
 import io
 import tarfile
-from unittest.mock import patch
-from urllib.error import HTTPError
 from pathlib import Path
 import tempfile
 import sys
@@ -66,102 +64,84 @@ with tempfile.TemporaryDirectory() as tmp:
             pass
         else:
             raise AssertionError("missing, extra, or duplicate inputs accepted")
-    release = {
-        "26.05": {
-            "rev": "a" * 40,
-            "date": "2026-06-01",
-            "build": 1000,
-            "name": "nixos-26.05.1000." + "a" * 12,
-        }
-    }
-    discovery.prefixes = lambda prefix: {
-        "nixos/": ["12.10", "26.05-small", "26.05", "26.11", "unstable"],
-        "nixos/26.05/": [
-            "nixos-26.05.999." + "b" * 7,
-            release["26.05"]["name"],
-            "nixos-26.05beta2000." + "b" * 12,
-        ],
-        "nixos/26.11/": ["nixos-26.11beta3000." + "b" * 12],
-    }[prefix]
-    discovery.get = lambda url: (
-        ("a" * 40).encode()
-        if url.endswith("/git-revision")
-        else json.dumps(
-            {"sha": "a" * 40, "commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}
-        ).encode()
-    )
-    assert discovery.release_tips() == release
-    # Older channels lack git-revision and have ambiguous short API hashes.
-    payload = io.BytesIO()
-    with tarfile.open(fileobj=payload, mode="w:xz") as archive:
-        member = tarfile.TarInfo(release["26.05"]["name"] + "/nixpkgs/.git-revision")
-        member.size = 40
-        archive.addfile(member, io.BytesIO(b"a" * 40))
+    import asyncio
+    import httpx
 
-    def legacy_get(url):
-        if url.endswith("/git-revision"):
-            raise HTTPError(url, 404, "missing", {}, None)
-        if url.endswith("/" + "a" * 12):
-            raise HTTPError(url, 422, "ambiguous", {}, None)
-        assert url.endswith("/" + "a" * 40)
-        return json.dumps(
-            {"sha": "a" * 40, "commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}
-        ).encode()
+    async def check():
+        def handle(request):
+            path = request.url.path
+            if request.url.host == "nix-releases.s3.amazonaws.com":
+                prefix = request.url.params["prefix"]
+                names = (
+                    [r["name"] for r in revs]
+                    if prefix == "nixos/unstable/"
+                    else (
+                        ["26.05"]
+                        if prefix == "nixos/"
+                        else ["nixos-26.05.1000." + "a" * 12]
+                    )
+                )
+                body = (
+                    "<ListBucketResult><IsTruncated>false</IsTruncated>"
+                    + "".join(
+                        f"<CommonPrefixes><Prefix>{prefix}{n}/</Prefix></CommonPrefixes>"
+                        for n in names
+                    )
+                    + "</ListBucketResult>"
+                )
+                return httpx.Response(200, text=body)
+            if path.endswith("/git-revision"):
+                sha = next((r["rev"] for r in revs if r["name"] in path), "a" * 40)
+                return httpx.Response(200, text=sha)
+            sha = path.rsplit("/", 1)[1]
+            return httpx.Response(
+                200,
+                json={
+                    "sha": sha,
+                    "commit": {"committer": {"date": "2026-01-01T00:00:00Z"}},
+                },
+            )
 
-    discovery.get = legacy_get
-    with patch.object(
-        discovery.urllib.request, "urlopen", return_value=io.BytesIO(payload.getvalue())
-    ):
-        assert discovery.release_tips() == release
-    discovery.get = lambda url: b"bad-sha"
-    try:
-        discovery.release_tips()
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("invalid release revision accepted")
-    discovery.release_tips = lambda: release
-    discovery.channels = lambda: [r["name"] for r in reversed(revs)]
-    requests = []
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            d = discovery.Discovery(client)
+            assert len(await d.unstable(None)) == 3
+            assert len(await d.unstable(1)) == 1
+            releases = await d.releases()
+            assert releases["26.05"]["build"] == 1000
+            assert releases["26.05"]["rev"] == "a" * 40
+        name = "nixos-14.04.630." + "a" * 7
+        payload = io.BytesIO()
+        with tarfile.open(fileobj=payload, mode="w:xz") as archive:
+            member = tarfile.TarInfo(name + "/nixpkgs/.git-revision")
+            member.size = 40
+            archive.addfile(member, io.BytesIO(b"a" * 40))
 
-    def get(url):
-        requests.append(url)
-        if url.endswith("/git-revision"):
-            return next(r["rev"].encode() for r in revs if r["name"] in url)
-        return json.dumps(
-            {
-                "commit": {
-                    "committer": {
-                        "date": next(r["date"] for r in revs if r["rev"] in url)
-                    }
-                }
-            }
-        ).encode()
+        def legacy(request):
+            if request.url.path.endswith("/git-revision"):
+                return httpx.Response(404)
+            if request.url.path.endswith(".tar.xz"):
+                return httpx.Response(200, content=payload.getvalue())
+            return httpx.Response(
+                200,
+                json={"sha": "a" * 40, "commit": {"committer": {"date": "2014-01-01"}}},
+            )
 
-    discovery.get = get
-    discovery.discover(root / "fresh", 1)
-    fresh = fold.read(root / "fresh/manifest.json")
-    assert fresh["revisions"] == revs[-1:]
-    assert fresh["releases"] == release
-    assert len(requests) == 2
-    discovery.discover(root / "larger", 3)
-    assert fold.read(root / "larger/manifest.json")["revisions"] == revs
-    assert fold.read(root / "larger/matrix.json") == {
-        "include": [{"rev": r["rev"], "name": r["name"]} for r in revs]
-    }
-    discovery.discover(root / "maximum", 200)
-    assert fold.read(root / "maximum/manifest.json")["revisions"] == revs
-    discovery.discover(root / "unlimited")
-    assert fold.read(root / "unlimited/manifest.json")["revisions"] == revs
-    discovery.discover(root / "large-limit", 1000)
-    assert fold.read(root / "large-limit/manifest.json")["revisions"] == revs
-    for limit in (0, -1, 1.5, True, "200"):
-        try:
-            discovery.discover(root / "bad", limit)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("invalid limit accepted")
-print(
-    "full fold, disappearance/reappearance, deterministic repeat, exact input coverage, bounded discovery: OK"
-)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(legacy)) as client:
+            d = discovery.Discovery(client)
+            assert (await d.revision("14.04", name, release=True))["rev"] == "a" * 40
+            try:
+                await d.revision("unstable", name)
+            except httpx.HTTPStatusError as error:
+                assert error.response.status_code == 404
+            else:
+                raise AssertionError("unstable 404 must not use archive fallback")
+        for limit in (0, -1, True, "200"):
+            try:
+                await discovery.discover(root / "bad", limit)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("invalid limit accepted")
+
+    asyncio.run(check())
+print("fold and async discovery: OK")

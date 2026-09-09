@@ -3,7 +3,10 @@
 {
   deps = with pkgs; [
     bash
-    python3
+    (python3.withPackages (p: [
+      p.httpx
+      p.h2
+    ]))
     nix-eval-jobs
     gitMinimal
     gnutar
