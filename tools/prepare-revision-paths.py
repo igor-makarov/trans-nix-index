@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate shard receipts against the full manifest; fetch only cached JSONs."""
+"""Validate manifest receipt coverage and batch-fetch JSONs; merge checks contents."""
 import argparse
 import json
 from pathlib import Path
@@ -29,6 +29,27 @@ def collect(manifest, receipts):
     return paths
 
 
+def fetch(paths, roots):
+    roots.mkdir(parents=True, exist_ok=True)
+    # One invocation lets Nix schedule substitutions; no extraction may build.
+    # Nix creates numbered roots when realising multiple paths.
+    subprocess.run(
+        [
+            "nix-store",
+            "--realise",
+            *sorted(paths.values()),
+            "--max-jobs",
+            "0",
+            "--builders",
+            "",
+            "--add-root",
+            str((roots / "revision").resolve()),
+            "--indirect",
+        ],
+        check=True,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("inputs", type=Path)
@@ -42,26 +63,7 @@ def main():
             for p in sorted((args.inputs / "revision-paths").glob("*.json"))
         ],
     )
-    args.roots.mkdir(parents=True, exist_ok=True)
-    for rev, path in sorted(paths.items()):
-        subprocess.run(
-            [
-                "nix-store",
-                "--realise",
-                path,
-                "--max-jobs",
-                "0",
-                "--builders",
-                "",
-                "--add-root",
-                str((args.roots / rev).absolute()),
-                "--indirect",
-            ],
-            check=True,
-        )
-        data = json.loads(Path(path).read_text())
-        if data.get("schema") != 1 or data.get("rev") != rev:
-            raise ValueError("revision JSON identity mismatch")
+    fetch(paths, args.roots)
     (args.inputs / "revision-files.json").write_text(
         json.dumps(paths, sort_keys=True) + "\n"
     )

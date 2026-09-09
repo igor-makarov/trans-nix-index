@@ -49,38 +49,15 @@ else:
     raise AssertionError("name alone allowed an input build")
 assert m.dependencies(recipe) == {dep: ["out"]}
 assert m.dependencies({"inputDrvs": {dep: ["out"]}}) == {dep: ["out"]}
-with tempfile.TemporaryDirectory() as tmp:
-    for fetch_fails in (False, True):
-        calls = []
-
-        def run(command, **kwargs):
-            calls.append(command)
-            if "--dry-run" in command:
-                assert command[-1] == drv
-                return subprocess.CompletedProcess(command, 0, "", plan)
-            assert command[:3] == ["nix-store", "--realise", out]
-            assert command[command.index("--max-jobs") + 1] == "0"
-            assert command[command.index("--builders") + 1] == ""
-            assert "--add-root" in command
-            if fetch_fails:
-                raise subprocess.CalledProcessError(1, command)
-            return subprocess.CompletedProcess(command, 0)
-
-        with patch.object(m.subprocess, "run", side_effect=run), patch.object(
-            m,
-            "show",
-            side_effect=[
-                {drv: recipe},
-                {dep: {"outputs": {"out": {"path": out.split("/")[-1]}}}},
-            ],
-        ):
-            try:
-                m.prepare(drv, Path(tmp))
-            except subprocess.CalledProcessError:
-                assert fetch_fails
-            else:
-                assert not fetch_fails
-            assert len(calls) == 2
+for dry_plan, recipes in ((plan, {drv: recipe}), ("", {drv: recipe})):
+    with patch.object(
+        m.subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess([], 0, "", dry_plan),
+    ) as run, patch.object(m, "show", return_value=recipes):
+        m.prepare(drv)
+        assert run.call_count == 1
+        assert run.call_args.args[0] == ["nix-store", "--realise", "--dry-run", drv]
 print(
-    "merge preflight: exact drv plan, fail-closed parsing, recipe markers, fetch-only rooted inputs and fetch failure: OK"
+    "merge preflight: fail-closed parsing, recipe markers, dry-run only including cache hits: OK"
 )

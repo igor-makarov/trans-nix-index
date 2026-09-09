@@ -2,8 +2,8 @@
 # Deliberately impure: cache membership, narinfos, runtime graph and closures.
 set -euo pipefail
 source scripts/ci/cachix
-: "${PIPELINE_RESULT:?Pass the pure aggregate store path}"
-cache_pull "$PIPELINE_RESULT"
+: "${PIPELINE_RESULT:?Pass the merged revision directory}"
+test -d "$PIPELINE_RESULT/index"
 export MULTIVERSE_ROOT="$PWD/_ci/pure/enrichment"
 export MULTIVERSE_NIX="$PWD/nix"
 mkdir -p "$MULTIVERSE_ROOT/index"

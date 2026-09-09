@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """Preflight one exact merge .drv using Nix's dry-run build plan.
 
-Only recipes explicitly marked as merge computations may build. Fetch and root
-all boundary inputs with builders disabled before executing that same .drv.
+Only recipes explicitly marked as merge computations may build. No downloads
+or builds are performed by this check.
 """
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
-import tempfile
 
 MARKER = "transNixIndexMerge"
 PATH = r"/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[^\s/]+"
@@ -88,7 +86,7 @@ def dependencies(recipe):
     return recipe["inputDrvs"]
 
 
-def prepare(drv, roots):
+def prepare(drv):
     if not re.fullmatch(PATH + r"\.drv", drv):
         raise ValueError("expected a merge derivation store path")
     plan = subprocess.run(
@@ -104,40 +102,8 @@ def prepare(drv, roots):
         raise ValueError("unexpected dry-run stdout")
     recipes = show(set(builds) | {drv})
     allowed([drv, *builds], recipes)
-    boundary = {}
-    for path in builds:
-        for dependency, outputs in dependencies(recipes[path]).items():
-            if dependency not in builds:
-                boundary.setdefault(dependency, set()).update(outputs)
-    inputs = set(fetches)
-    if boundary:
-        deps = show(boundary)
-        for dependency, outputs in boundary.items():
-            for output in outputs:
-                inputs.add(store_path(deps[dependency]["outputs"][output]["path"]))
-    # Also retain an already-built final output when the plan needs no builders.
-    if drv not in builds:
-        inputs.update(store_path(o["path"]) for o in recipes[drv]["outputs"].values())
-    roots.mkdir(parents=True, exist_ok=True)
-    directory = Path(tempfile.mkdtemp(prefix="plan-", dir=roots)).resolve()
-    for index, path in enumerate(sorted(inputs)):
-        subprocess.run(
-            [
-                "nix-store",
-                "--realise",
-                path,
-                "--max-jobs",
-                "0",
-                "--builders",
-                "",
-                "--add-root",
-                str(directory / str(index)),
-            ],
-            check=True,
-            stdout=sys.stderr,
-        )
     print(
-        f"Preflight passed: {len(builds)} merge builds; {len(inputs)} input paths retained",
+        f"Preflight passed: {len(builds)} merge builds; {len(fetches)} planned downloads",
         file=sys.stderr,
     )
 
@@ -145,6 +111,5 @@ def prepare(drv, roots):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("derivation")
-    parser.add_argument("roots", type=Path)
     args = parser.parse_args()
-    prepare(args.derivation, args.roots)
+    prepare(args.derivation)

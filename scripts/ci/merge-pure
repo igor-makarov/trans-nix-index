@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
+# Fetch immutable revision files with Nix; aggregate directly in the workspace.
 set -euo pipefail
 source scripts/ci/cachix
-# Shards may have just published paths previously probed as missing locally.
 export NIX_CONFIG="${NIX_CONFIG}
 narinfo-cache-negative-ttl = 0"
-PIPELINE_INPUTS="$PWD/_ci/pure/inputs"
-test -f "$PIPELINE_INPUTS/manifest.json"
+inputs="$PWD/_ci/pure/inputs"
 roots=$(mktemp -d "$PWD/_ci/pure/merge-roots.XXXXXXXX")
-python3 tools/prepare-revision-paths.py "$PIPELINE_INPUTS" "$roots/revisions"
-nix-instantiate nix/pipeline-build.nix --argstr inputs "$PIPELINE_INPUTS" \
-  -A all --add-root "$roots/derivation" >/dev/null
-drv=$(readlink -f "$roots/derivation")
-python3 tools/prepare-merge.py "$drv" "$roots/inputs"
-nix-store --realise "$drv" --add-root "$roots/result" >/dev/null
-result=$(readlink -f "$roots/result")
-cache_push "$result"
-mkdir -p _ci/pure
-printf '%s\n' "$result" > _ci/pure/result-path
+python3 tools/prepare-revision-paths.py "$inputs" "$roots/revisions"
+result="$PWD/_ci/pure/merged-revisions"
+test ! -e "$result"
+mkdir "$result"
+python3 tools/merge-revisions.py "$inputs/manifest.json" "$inputs/revision-files.json" "$result/index"
+work=$(mktemp -d "$PWD/_ci/pure/merge-work.XXXXXXXX")
+mkdir "$work/index"
+cp "$result/index/revisions.json" "$work/"
+cp "$result/index/history.json" "$work/index/"
+MULTIVERSE_ROOT="$work" bash tools/build-stats.sh
+cp "$work/index/stats.json" "$result/index/"
+python3 tools/split-revision-evaluations.py "$inputs/revision-files.json" "$result/evaluations"
+# Keep the many evaluation files in one archive for the artifact handoff.
+tar -C "$result" -czf "$PWD/_ci/pure/merged-revisions.tar.gz" .

@@ -3,7 +3,8 @@
 set -euo pipefail
 source scripts/ci/cachix
 : "${PIPELINE_RESULT:?}" "${PIPELINE_SHARD:?}" "${PIPELINE_SHARDS:?}"
-cache_pull "$PIPELINE_RESULT"
+test -d "$PIPELINE_RESULT/index"
+test -d "$PIPELINE_RESULT/evaluations"
 export MULTIVERSE_ROOT="$PWD/_ci/pure/enrichment-shard"
 export MULTIVERSE_NIX="$PWD/nix"
 mkdir -p "$MULTIVERSE_ROOT/index"

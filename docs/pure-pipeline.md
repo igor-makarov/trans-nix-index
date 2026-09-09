@@ -32,14 +32,13 @@ One `pure-index` workflow contains the entire graph:
    downloaded inputs, and built outputs are GC-rooted through publication.
 3. **merge revisions** depends on all shards succeeding. Each shard publishes a small
    GitHub artifact mapping revision SHAs to final JSON store paths. Merge
-   validates exact manifest coverage, downloads and roots those cached inputs
-   with builds disabled, then folds them into the version index, history, and
-   statistics. It never reconstructs extraction recipes or fetches their nixpkgs
-   source trees. One merge derivation writes real `index/` and `evaluations/`
-   directories, not a symlink wrapper. Published revision JSONs and the merged
-   directory use structured `unsafeDiscardReferences.out = true` with an empty
-   allowed-reference check: package hashes remain verbatim data, but downloads
-   retain no build dependencies. Intermediate extraction recipes are unchanged.
+   validates exact receipt coverage and path names against the manifest, fetches
+   all revision JSONs in one fetch-only Nix call, then runs the merge scripts
+   directly in the workspace. It never reconstructs extraction recipes or fetches
+   their nixpkgs source trees. Real `index/` and `evaluations/` directories travel
+   as a compressed GitHub artifact, not a Nix derivation or Cachix output.
+   Published revision JSONs remain reference-free, preserving package hashes
+   without retaining build dependencies. Extraction recipes are unchanged.
    No live availability probes.
 4. **enrichment shard N** optionally checks output presence and recursively
    crawls dependencies. It reuses the revision matrix count, but partitions
@@ -147,18 +146,15 @@ no custom memory sizing or override. Give the local VM enough RAM (6 GiB for
 one worker). Nix and nix-eval-jobs default to one build job and one evaluator
 worker; the pipeline leaves those defaults unchanged. Output evaluation reports progress every 30 seconds.
 
-Merge always folds the full revision set. Its CI wrapper instantiates `all` once,
-roots that `.drv`, and runs `nix-store --realise --dry-run` on it. The preflight
-reads recipe metadata for the planned builds: only derivations marked
-`transNixIndexMerge = "1"` may build. Revision outputs and toolchain dependencies
-must already exist locally or be substitutable. Unknown plan formats fail closed.
-No manifest-based duplicate input list is used for this check.
-
-The preflight fetches and roots planned downloads and existing boundary inputs
-with local and remote builders disabled. The wrapper then realises the exact
-same `.drv`. Fetching remains outside the sandboxed pure computation. Direct
-`nix build` remains useful for local development but does not enforce this CI
-preflight policy.
+CI merge always folds the full revision set in the workspace. Receipt checks
+reject missing, extra or duplicate revisions and mismatched store-path names.
+One `nix-store --realise` call downloads and roots all revision JSONs with
+`--max-jobs 0 --builders ''`; Nix schedules concurrent substitutions, and missing
+cached files fail rather than triggering extraction. The merge checks schema
+and revision identity while reading each JSON, with no duplicate parsing pass.
+The compressed merged artifact is consumed by enrichment shards and enrichment
+merge. The optional Nix aggregation expression remains available for local use,
+but CI does not instantiate, build or publish a merge derivation.
 
 Discovery also collects the latest published tip of each release channel since
 13.10, excluding beta-only and architecture/small channels. These are metadata

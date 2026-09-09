@@ -16,3 +16,13 @@ mise run nix -- develop --command bash scripts/ci/pages
 # Run browser tests against the built site.
 mise run nix -- develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
 ```
+
+## Guidelines
+
+### Temp Roots
+
+Use the real repository workspace and normal persistent Nix store for local
+pipeline tests. Do not create alternate test roots, copied workspaces, or
+symlinked repository replicas. To simulate missing paths, pre-delete only the
+specific test inputs or outputs needed for that scenario.
+Do not use broad garbage collection or temporary Nix stores.
