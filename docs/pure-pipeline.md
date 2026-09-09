@@ -103,11 +103,12 @@ Shard jobs record host CPU, available memory, swap use, and I/O wait every five
 seconds in separate seven-day `runner-*` GitHub artifacts. These are host-wide
 samples, not per-process measurements. Build/upload boundaries are timestamped.
 
-Cachix holds per-revision outputs, aggregates, observation snapshots, and site
-closures. The discovery artifact contains metadata only, and its exact
-artifact ID is passed to consumers (also when retrying failed jobs). Result
-store paths travel as job outputs. Pages additionally uses its required upload
-artifact for deployment. The legacy scheduled OCI workflows remain unchanged.
+New Cachix uploads are limited to per-revision outputs. Aggregated revisions
+and enriched snapshots travel as compressed GitHub artifacts, selected by exact
+artifact ID. Enriched snapshots include checksums verified before the Pages build.
+Pages uses its required deployment artifact; neither snapshots nor sites are
+uploaded to Cachix. Existing Cachix entries are not deleted. The discovery
+artifact contains metadata only. The legacy scheduled OCI workflows remain unchanged.
 
 ## Inputs and outputs
 

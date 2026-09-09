@@ -195,9 +195,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
     outputs:
-      result: ${{ steps.result.outputs.path }}
+      artifact: ${{ steps.result.outputs.artifact-id }}
     env:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
       PIPELINE_RESULT: /workspace/_ci/pure/merged-revisions
       PIPELINE_ENRICH_SHARDS: /workspace/_ci/pure/enrichment-artifacts
       PIPELINE_SHARDS: ${{ needs.enrich.outputs.shards }}
@@ -222,9 +221,13 @@ jobs:
       - name: merge observations and optionally census payloads
         run: mise run nix -- develop --command bash scripts/ci/enrich-pure
       - id: result
-        run: |
-          echo "path=$(cat _ci/pure/result-path)" >> "$GITHUB_OUTPUT"
-          echo "Enriched Cachix result — $(cat _ci/pure/result-path)" >> "$GITHUB_STEP_SUMMARY"
+        uses: actions/upload-artifact@v7
+        with:
+          name: enriched-snapshot${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
+          path: _ci/pure/enriched-snapshot.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
   pages:
     needs: merge_enrichment
     if: inputs.deploy
@@ -240,14 +243,15 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      PIPELINE_RESULT: ${{ needs.merge_enrichment.outputs.result }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/mise
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.merge_enrichment.outputs.artifact }}
+          path: _ci/pure
       - name: Build and browser-test this exact snapshot
         run: mise run nix -- develop --command bash scripts/ci/pages-pure
       - uses: actions/configure-pages@v6

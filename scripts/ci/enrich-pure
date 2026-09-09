@@ -39,10 +39,5 @@ for file in "$work/data/"misses-*.json; do cp "$file" "$staging/state/"; done
 if [[ -f "$work/census-results.json" ]]; then
   cp "$work/census-results.json" "$staging/state/"
 fi
-raw=$(nix store add-path --name cache-observations "$staging")
-cache_pull "$raw"
-roots=$(mktemp -d "$PWD/_ci/pure/enriched-roots.XXXXXXXX")
-result=$(nix build --file nix/enriched-build.nix --argstr pure "$PIPELINE_RESULT" \
-  --argstr observations "$raw" --out-link "$roots/result" --print-out-paths -L)
-cache_push "$result"
-printf '%s\n' "$result" > _ci/pure/result-path
+python3 tools/snapshot.py "$staging" "$PWD/_ci/pure/enriched-snapshot.tar.gz"
+python3 tools/validate-data.py "$staging"
