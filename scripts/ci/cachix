@@ -6,6 +6,10 @@ cachix use trans-nix-index
 export NIX_CONFIG="${NIX_CONFIG:-}
 sandbox = true"
 cache_push() {
+  if [[ "${PIPELINE_PUBLISH:-true}" == false ]]; then
+    echo "Local run: not uploading $1" >&2
+    return
+  fi
   : "${CACHIX_AUTH_TOKEN:?Set CACHIX_AUTH_TOKEN to publish pipeline outputs}"
   cachix push trans-nix-index "$1"
 }

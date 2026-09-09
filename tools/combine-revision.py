@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import sys
+import re
 
 versions, outputs, rev, destination = sys.argv[1:]
 attrs = {
@@ -19,7 +20,11 @@ for system, path in json.loads(outputs).items():
     for attr, error in json.loads((Path(path) / "errors.json").read_text()).items():
         attrs.setdefault(attr, {"systems": {}})["systems"].setdefault(system, {})[
             "error"
-        ] = error
+        ] = re.sub(
+            r"(?<![0-9abcdfghijklmnpqrsvwxyz])[0-9abcdfghijklmnpqrsvwxyz]{32}(?=-)",
+            "e" * 32,
+            error,
+        )
 for entry in attrs.values():
     names = {v["name"] for v in entry["systems"].values() if "name" in v}
     if len(names) == 1:

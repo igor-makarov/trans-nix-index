@@ -1,5 +1,10 @@
 { pkgs, system }:
 {
+  combine-revision =
+    pkgs.runCommand "check-combine-revision" { nativeBuildInputs = [ pkgs.python3 ]; }
+      ''
+        python3 ${../tests/combine-revision.py} ${../tools/combine-revision.py} | tee "$out"
+      '';
   revision-paths = pkgs.runCommand "check-revision-paths" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 ${../tests/revision-paths.py} ${../tools/prepare-revision-paths.py} | tee "$out"
   '';

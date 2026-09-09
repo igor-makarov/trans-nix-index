@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source scripts/ci/cachix
+# Shards may have just published paths previously probed as missing locally.
+export NIX_CONFIG="${NIX_CONFIG}
+narinfo-cache-negative-ttl = 0"
 PIPELINE_INPUTS="$PWD/_ci/pure/inputs"
 test -f "$PIPELINE_INPUTS/manifest.json"
 roots=$(mktemp -d "$PWD/_ci/pure/merge-roots.XXXXXXXX")

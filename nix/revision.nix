@@ -75,9 +75,16 @@ let
 in
 {
   inherit versions outputs;
-  all = pkgs.runCommand "revision-${label}.json" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-    python3 ${../tools/combine-revision.py} ${versions} \
-      ${pkgs.lib.escapeShellArg (builtins.toJSON outputs)} \
-      ${pkgs.lib.escapeShellArg revision.rev} "$out"
-  '';
+  all =
+    pkgs.runCommand "revision-${label}.json"
+      {
+        nativeBuildInputs = [ pkgs.python3 ];
+        # A revision JSON must never retain source trees or extraction dependencies.
+        allowedReferences = [ ];
+      }
+      ''
+        python3 ${../tools/combine-revision.py} ${versions} \
+          ${pkgs.lib.escapeShellArg (builtins.toJSON outputs)} \
+          ${pkgs.lib.escapeShellArg revision.rev} "$out"
+      '';
 }
