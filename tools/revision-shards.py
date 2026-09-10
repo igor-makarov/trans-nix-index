@@ -15,6 +15,8 @@ def rows_from(plan):
     if not rows or len({r["rev"] for r in rows}) != len(rows):
         raise ValueError("empty or duplicate revision plan")
     for row in rows:
+        if "tree" in row and not re.fullmatch(r"[0-9a-f]{40}", row["tree"]):
+            raise ValueError("invalid Git tree identity")
         if not re.fullmatch(r"[0-9a-f]{40}", row["rev"]) or not re.fullmatch(
             r"[A-Za-z0-9][A-Za-z0-9._+-]*", row["name"]
         ):
@@ -131,6 +133,7 @@ def main():
                 "--argstr",
                 "rev",
                 row["rev"],
+                *(["--argstr", "tree", row["tree"]] if "tree" in row else []),
                 "all.outPath",
             ],
             text=True,
@@ -150,6 +153,7 @@ def main():
                 "--argstr",
                 "rev",
                 row["rev"],
+                *(["--argstr", "tree", row["tree"]] if "tree" in row else []),
                 "-A",
                 "all",
                 "--add-root",

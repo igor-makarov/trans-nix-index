@@ -27,6 +27,18 @@
         python3 ${../tests/enrichment.py} ${../tools} | tee "$out"
         python3 ${../tests/census.py} ${../tools} | tee -a "$out"
       '';
+  tree-hashes =
+    pkgs.runCommand "check-tree-hashes"
+      {
+        nativeBuildInputs = [
+          pkgs.python3
+          pkgs.gitMinimal
+        ];
+      }
+      ''
+        export HOME="$TMPDIR"
+        python3 ${../tests/tree-hashes.py} ${../tools/discover-tree-hashes.py} | tee "$out"
+      '';
   pure-pipeline = import ../tests/pure-pipeline.nix { inherit pkgs; };
   prepare-merge = pkgs.runCommand "check-prepare-merge" { nativeBuildInputs = [ pkgs.python3 ]; } ''
     python3 ${../tests/prepare-merge.py} ${../tools/prepare-merge.py} | tee "$out"

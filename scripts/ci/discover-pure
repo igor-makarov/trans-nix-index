@@ -7,5 +7,7 @@ if [[ -n "${PIPELINE_LIMIT:-}" ]]; then
   args=(--limit "$PIPELINE_LIMIT")
 fi
 python3 tools/discover-pipeline.py _ci/pure/inputs "${args[@]}"
+tree_repo=$(mktemp -u "$PWD/_ci/pure/commit-trees.XXXXXXXX")
+python3 tools/discover-tree-hashes.py _ci/pure/inputs "$tree_repo"
 # Docker runs as root; the host runner shuffles this generated plan next.
 chmod a+w _ci/pure/inputs/matrix.json

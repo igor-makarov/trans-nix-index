@@ -5,12 +5,18 @@
   revisionFiles ? null,
   sourceFor ? (
     revision:
-    (builtins.fetchTree {
-      type = "github";
-      owner = "NixOS";
-      repo = "nixpkgs";
-      inherit (revision) rev;
-    }).outPath
+    if revision ? tree then
+      import ./fetch-git-tree.nix {
+        inherit pkgs;
+        inherit (revision) rev tree;
+      }
+    else
+      (builtins.fetchTree {
+        type = "github";
+        owner = "NixOS";
+        repo = "nixpkgs";
+        inherit (revision) rev;
+      }).outPath
   ),
 }:
 let

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Shared Nix settings for local and CI Docker invocations.
-config='experimental-features = nix-command flakes
+config='experimental-features = nix-command flakes git-hashing
 sandbox = true
 extra-substituters = https://trans-nix-index.cachix.org
 extra-trusted-public-keys = trans-nix-index.cachix.org-1:CgtmqltynGk+5llIi/y0gR8Zi/lDSdcoegVGYEG38I8='
