@@ -38,7 +38,6 @@
       }
       ''
         python3 ${../tests/enrichment.py} ${../tools} | tee "$out"
-        python3 ${../tests/census.py} ${../tools} | tee -a "$out"
       '';
   tree-hashes =
     pkgs.runCommand "check-tree-hashes"

@@ -23,10 +23,6 @@ on:
         description: 'Enrich the index and build/browser-test the site'
         type: boolean
         default: true
-      census:
-        description: 'Refresh payload observations (requires force for unchanged inputs)'
-        type: boolean
-        default: false
       deploy:
         description: 'Deploy tested site (main, production, full index only)'
         type: boolean
@@ -51,7 +47,6 @@ jobs:
       LIMIT: ${{ inputs.limit }}
       SHARDS: ${{ inputs.max_shards }}
       ENRICH: ${{ inputs.enrich }}
-      CENSUS: ${{ inputs.census }}
       DEPLOY: ${{ inputs.deploy }}
     steps:
       - id: validate
@@ -65,7 +60,6 @@ jobs:
           if [[ "$DEPLOY" == true ]]; then
             [[ "$SCOPE" == production && "$ENRICH" == true ]]
           fi
-          if [[ "$CENSUS" == true ]]; then [[ "$ENRICH" == true ]]; fi
           echo "repository=ghcr.io/${GITHUB_REPOSITORY,,}-pipeline-$SCOPE" >> "$GITHUB_OUTPUT"
   discover:
     needs: validate
@@ -90,8 +84,7 @@ jobs:
       repository: ${{ needs.validate.outputs.repository }}
       digest: ${{ needs.index.outputs.digest }}
       max_shards: ${{ fromJSON(format('{0}', inputs.max_shards)) }}
-      force: ${{ inputs.force || inputs.census }}
-      census: ${{ inputs.census }}
+      force: ${{ inputs.force }}
   site:
     needs: [validate, enrich]
     uses: ./.github/workflows/pipeline-site.yml

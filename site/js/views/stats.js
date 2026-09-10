@@ -1,8 +1,8 @@
-/* ---------- stats: the trend charts, the universe, the census ----------
+/* ---------- stats: trend charts, universe, store statistics ----------
  *
  * The charts here are hand-rolled SVG over the shared plumbing in charts.js.
  * The universe canvas lives in universe.js; this module holds the trend
- * charts, the leaderboards, the cache census, and the Stats view that
+ * charts, the leaderboards, store statistics, and the Stats view that
  * composes them.
  */
 
@@ -301,57 +301,14 @@ function Leaderboard({
   `;
 }
 
-/* ---------- the census: is thirteen years of software still alive ---------- */
-function CacheHealth({ navigate }) {
-  const census = useFile("census.json");
-  if (!census || census === SHARD_ERROR) return null;
-  const t = census.totals;
-  const years = census.byYear.map((y) => ({ ...y, month: String(y.y) }));
-  const bloat = census.bloat.filter((b) => b.medianNs != null);
+/* ---------- recorded store sizes and dependencies ---------- */
+function StoreStats({ navigate }) {
+  const storeStats = useFile("store-stats.json");
+  if (!storeStats || storeStats === SHARD_ERROR) return null;
+  const bloat = storeStats.bloat.filter((b) => b.medianNs != null);
 
   return html`
-    <h2>The cache census</h2>
-    <p class="muted">
-      Every matched store path was asked for, by name, at${" "}
-      <a href="https://cache.nixos.org">cache.nixos.org</a
-      >${" on "}${census.at}.
-    </p>
-    <div class="kpis">
-      <div class="kpi">
-        <div class="v">${t.matched.toLocaleString()}</div>
-        <div class="l">
-          versions with a known store
-          path${t.universe &&
-          html`${" "}<span
-              title="The unmatched remainder is a limit of name matching, not evidence of deletion: unfree and broken packages were never built by Hydra at all, and some derivation names drifted from their attribute."
-              style="cursor:help; border-bottom:1px dotted currentColor"
-              >(${Math.round((100 * t.matched) / t.universe)}% of${" "}
-              ${t.universe.toLocaleString()})</span
-            >`}
-        </div>
-      </div>
-      <div class="kpi">
-        <div class="v">${((t.alive / t.matched) * 100).toFixed(1)}%</div>
-        <div class="l">of those still substitutable today</div>
-      </div>
-      <div class="kpi">
-        <div class="v">${fmtBytes(t.aliveBytes)}</div>
-        <div class="l">of history still downloadable</div>
-      </div>
-      <div class="kpi">
-        <div class="v">${(t.matched - t.alive).toLocaleString()}</div>
-        <div class="l">matched versions gone from the cache</div>
-      </div>
-    </div>
-
-    <${LineChart}
-      title="Survival by vintage"
-      sub="Of the package versions whose newest build landed in each year, the share cache.nixos.org still serves."
-      rows=${years}
-      value=${(r) => (r.pairs ? (100 * r.alive) / r.pairs : 0)}
-      format=${(v) => `${v.toFixed(1)}%`}
-      unit="% alive"
-    />
+    <h2>Store statistics</h2>
 
     ${bloat.length > 2 &&
     html`
@@ -365,12 +322,12 @@ function CacheHealth({ navigate }) {
         unit="median installed size"
       />
     `}
-    ${census.bloat.filter((b) => b.medianNd != null).length > 2 &&
+    ${storeStats.bloat.filter((b) => b.medianNd != null).length > 2 &&
     html`
       <${LineChart}
         title="Dependencies per package"
         sub="Median count of direct runtime references, by the year a version last shipped."
-        rows=${census.bloat
+        rows=${storeStats.bloat
           .filter((b) => b.medianNd != null)
           .map((b) => ({ ...b, month: String(b.y) }))}
         value=${(r) => r.medianNd}
@@ -383,7 +340,7 @@ function CacheHealth({ navigate }) {
       title="The immortals"
       sub="Versions still shipping today whose current unbroken run started longest ago."
       cols=${["package", "shipping since"]}
-      rows=${(census.immortals || []).map(([a, v, d]) =>
+      rows=${(storeStats.immortals || []).map(([a, v, d]) =>
         Object.assign([a, v, d], { ver: v }),
       )}
       navigate=${navigate}
@@ -392,7 +349,7 @@ function CacheHealth({ navigate }) {
       title="Biggest single-bump weight gains"
       sub="Consecutive versions of one package, ranked by how much installed size the bump added."
       cols=${["package", "gained"]}
-      rows=${(census.jumps || []).map(([a, v1, v2, d]) =>
+      rows=${(storeStats.jumps || []).map(([a, v1, v2, d]) =>
         Object.assign([a, `${v1} → ${v2}`, `+${fmtBytes(d)}`], { ver: v2 }),
       )}
       navigate=${navigate}
@@ -402,7 +359,7 @@ function CacheHealth({ navigate }) {
       title="Heaviest closures shipping today"
       sub="Current versions, ranked by full runtime closure."
       cols=${["package", "closure"]}
-      rows=${(census.topClosures || []).map(([a, v, cs]) =>
+      rows=${(storeStats.topClosures || []).map(([a, v, cs]) =>
         Object.assign([a, v, fmtBytes(cs)], { ver: v }),
       )}
       navigate=${navigate}
@@ -411,20 +368,11 @@ function CacheHealth({ navigate }) {
       title="Most depended-upon today"
       sub="Current versions, ranked by how many packages link against them at runtime."
       cols=${["package", "dependents"]}
-      rows=${(census.topDeps || []).map(([a, n]) => [
+      rows=${(storeStats.topDeps || []).map(([a, n]) => [
         a,
         "",
         n.toLocaleString(),
       ])}
-      navigate=${navigate}
-    />
-    <${Leaderboard}
-      title="Largest losses"
-      sub="The biggest builds the cache no longer serves."
-      cols=${["package", "installed size"]}
-      rows=${(census.biggestDead || []).map(([a, v, ns]) =>
-        Object.assign([a, v, fmtBytes(ns)], { ver: v }),
-      )}
       navigate=${navigate}
     />
   `;
@@ -488,6 +436,6 @@ export function Stats({ stats, revisions, navigate }) {
       <${Universe} revisions=${revisions} navigate=${navigate} />
     `}
 
-    <${CacheHealth} navigate=${navigate} />
+    <${StoreStats} navigate=${navigate} />
   `;
 }

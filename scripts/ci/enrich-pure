@@ -24,9 +24,6 @@ else
   bash tools/update-outpaths.sh "${mode[@]}" --systems "$systems" \
     --evaluations "$PIPELINE_RESULT/evaluations"
 fi
-if [[ "${PIPELINE_CENSUS:-false}" == true ]]; then
-  bash scripts/ci/observe-census
-fi
 staging=$(mktemp -d "$PWD/_ci/pure/snapshot.XXXXXXXX")
 mkdir "$staging/artifacts" "$staging/state"
 cp "$PIPELINE_RESULT/index/"*.json "$staging/"
@@ -36,8 +33,5 @@ cp "$work/data/"{info-indexed,refs-indexed,closures,outs-indexed}.json "$staging
 cp "$work/graph.jsonl" "$staging/state/"
 shopt -s nullglob
 for file in "$work/data/"misses-*.json; do cp "$file" "$staging/state/"; done
-if [[ -f "$work/census-results.json" ]]; then
-  cp "$work/census-results.json" "$staging/state/"
-fi
 python3 tools/snapshot.py "$staging" "$PWD/_ci/pure/enriched-snapshot.tar.gz"
 python3 tools/validate-data.py "$staging"

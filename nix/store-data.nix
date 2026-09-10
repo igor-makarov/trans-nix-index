@@ -1,4 +1,4 @@
-# The store-data products: meta/revdeps/identify shards, census.json,
+# The store-data products: meta/revdeps/identify shards, store-stats.json,
 # universe.bin. Built from the pinned artifacts, so the site's store views and
 # the fast evaluation path always describe the same data cut.
 #

@@ -89,9 +89,10 @@ discovers new nixpkgs revisions, and verifies that existing revision offsets hav
 It evaluates only new revisions, in bounded attribute batches, then merges versions and history and regenerates stats.
 Old per-revision extraction caches are not required.
 
-History retains removed versions and gaps. Census records binary availability separately;
-it does not delete historical package entries. Timeout results are unknown, not proof of disappearance.
-Census regenerates availability artifacts and publishes a complete snapshot without evaluating nixpkgs.
+History retains removed versions and gaps. Cache observations collected during enrichment
+do not delete historical package entries. Timeout results are unknown, not proof of disappearance.
+The site checks narinfo availability live when a package version is expanded; stored observations
+are not presented as current availability. There is no scheduled availability sweep.
 
 ## Recovery
 

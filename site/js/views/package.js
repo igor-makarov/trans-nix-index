@@ -193,7 +193,7 @@ function VersionRow({
           <${UsedBy} rd=${rd} navigate=${navigate} />
           ${entry.cs != null &&
           html`<div class="capt">
-            closure at census: <b>${fmtBytes(entry.cs)}</b>
+            recorded closure: <b>${fmtBytes(entry.cs)}</b>
             ${` across ${entry.cn ?? "?"} paths`}
           </div>`}
           <div class="links">
@@ -220,9 +220,6 @@ function VersionRow({
       </span>
       <span class="rowsize muted">
         ${entry?.ns != null ? fmtBytes(entry.ns) : ""}
-        ${entry && entry.ok === 0
-          ? html`<span class="badge-dead">○</span>`
-          : ""}
       </span>
       <span class="muted"><a href=${archive}>${r.name}</a></span>
     <//>

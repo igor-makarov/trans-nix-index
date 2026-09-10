@@ -14,9 +14,6 @@ on:
       max_shards:
         type: number
         default: 20
-      census:
-        type: boolean
-        default: false
     outputs:
       digest:
         value: ${{ jobs.merge.outputs.digest || jobs.plan.outputs.digest }}
@@ -99,7 +96,6 @@ jobs:
       PIPELINE_ENRICH_SHARDS: /workspace/_ci/pure/enrichment-artifacts
       MATRIX: ${{ needs.plan.outputs.matrix }}
       PREVIOUS: ${{ needs.plan.outputs.previous }}
-      PIPELINE_CENSUS: ${{ inputs.census }}
     steps:
       - uses: actions/checkout@v7
         with:

@@ -17,12 +17,8 @@ Emits, beside whatever the rest of the site build produces:
   identify/<xx>.json     digest -> [attr, version], sharded by digest prefix,
                          and covering every system: a digest names one path on
                          one system, so there is nothing to disambiguate
-  census.json            the aliveness census aggregates the stats page draws
+  store-stats.json       size and dependency aggregates for the stats page
   universe.bin           every measured version as one dot (see below)
-
-The census `at` field is the index tip's date, not today: the build runs in a
-sandbox with no clock worth trusting, and the data is only as fresh as the
-newest revision it covers anyway.
 """
 import glob
 import json
@@ -58,7 +54,7 @@ OUTPUT_SUFFIXES = {
 # recorded in full either way.
 REVDEP_CAP = 200
 
-# How many rows each census leaderboard keeps.
+# How many rows each store statistics leaderboard keeps.
 LEADERBOARD_ROWS = 200
 
 DIGEST_LEN = 32
@@ -154,7 +150,7 @@ vattrs = versions_closed["attrs"]
 
 # ---- the data artifacts -----------------------------------------------------
 # The store-path artifacts are per system (see docs/store-paths.md). Everything
-# the site aggregates — reverse dependencies, the census, the universe map — is
+# the site aggregates — reverse dependencies, store statistics, the universe map — is
 # built from SITE_SYSTEM, the one every published artifact covers. The others
 # get store metadata only, written to meta-<system>/ and fetched by the page
 # only when a reader asks for that system.
@@ -212,7 +208,7 @@ def build_meta_shards(pairs, by_digest, by_name, meta_dir, revdeps=None):
     """Write one system's meta/<shard>.json, and collect its reverse deps.
 
     `revdeps` is passed only for SITE_SYSTEM: the reverse-dependency shards,
-    like the census and the universe map, describe the system the site
+    like store statistics and the universe map, describe the system the site
     aggregates, and an alternate system contributes store metadata only.
     """
 
@@ -398,7 +394,7 @@ for key, entries in id_buckets.items():
     dump(entries, J(out, "identify", key + ".json"))
 print(f"identify: {len(id_buckets)} shards")
 
-# ---- census ---------------------------------------------------------------
+# ---- store statistics -----------------------------------------------------
 year_of = {}
 for (attr, ver), (digest, _, is_tip) in pairs.items():
     off = vattrs.get(attr, {}).get(ver)
@@ -406,25 +402,14 @@ for (attr, ver), (digest, _, is_tip) in pairs.items():
         revisions[off]["date"][:4] if off is not None else revisions[TIPOFF]["date"][:4]
     )
 
-by_year = defaultdict(lambda: {"pairs": 0, "alive": 0, "aliveBytes": 0})
 bloat = defaultdict(lambda: {"ns": [], "cs": [], "nd": [], "cn": []})
-alive_total = alive_bytes = 0
-dead_list = []
 sizes_by_attr = defaultdict(list)
 for (attr, ver), (digest, _, is_tip) in pairs.items():
     inf = info.get(digest)
     if not inf:
         continue
     y = year_of[(attr, ver)]
-    ok, ns = inf[0], inf[1] or 0
-    by_year[y]["pairs"] += 1
-    if ok:
-        by_year[y]["alive"] += 1
-        by_year[y]["aliveBytes"] += ns
-        alive_total += 1
-        alive_bytes += ns
-    elif ns:
-        dead_list.append((attr, ver, ns))
+    ns = inf[1] or 0
     if ns:
         bloat[y]["ns"].append(ns)
         off = vattrs.get(attr, {}).get(ver)
@@ -477,16 +462,7 @@ for a, v in tip_pairs:
         dep_counts.append((a, n))
 dep_counts.sort(key=lambda x: -x[1])
 
-census = {
-    "at": revisions[TIPOFF]["date"],
-    "totals": {
-        "universe": sum(len(v) for v in vattrs.values()),
-        "pairs": len(pairs),
-        "matched": sum(1 for p in pairs.values() if p[0] in info),
-        "alive": alive_total,
-        "aliveBytes": alive_bytes,
-    },
-    "byYear": [{"y": y, **c} for y, c in sorted(by_year.items())],
+store_stats = {
     "bloat": [
         {
             "y": y,
@@ -500,12 +476,11 @@ census = {
     ],
     "topClosures": top_closures,
     "topDeps": dep_counts[:LEADERBOARD_ROWS],
-    "biggestDead": sorted(dead_list, key=lambda x: -x[2])[:LEADERBOARD_ROWS],
     "immortals": [list(x) for x in immortals[:LEADERBOARD_ROWS]],
     "jumps": [[a, v1, v2, d] for a, v1, v2, d, _ in jumps[:LEADERBOARD_ROWS]],
 }
-dump(census, J(out, "census.json"))
-print("census written")
+dump(store_stats, J(out, "store-stats.json"))
+print("store statistics written")
 
 # ---- the universe: every measured version as one dot ------------------------
 # A binary sidecar the stats page draws on canvas: per version its lifetime

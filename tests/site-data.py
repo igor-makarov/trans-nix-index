@@ -58,6 +58,9 @@ with tempfile.TemporaryDirectory() as temporary:
             (data / f"{stem}-x86_64-linux.json").read_bytes()
         )
     subprocess.run(["python3", sys.argv[1], str(root), str(data), str(out)], check=True)
+    store_stats = json.loads((out / "store-stats.json").read_text())
+    assert set(store_stats) == {"bloat", "topClosures", "topDeps", "immortals", "jumps"}
+    assert store_stats["bloat"][0]["medianNs"] == 100
     for directory in ["meta", "meta-aarch64-linux"]:
         assert (
             "jetbrains.idea"

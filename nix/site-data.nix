@@ -1,5 +1,5 @@
 # The data products for the deployable site: history/versions shards, sitemap,
-# census, docs, universe.bin, etc.
+# store statistics, docs, universe.bin, etc.
 #
 # Heavy data processing that depends only on index data, revisions, releases and
 # docs — isolated from the frontend asset directory (site/) and dirty git state

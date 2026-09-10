@@ -96,9 +96,8 @@ def main():
             if rec.get("url"):
                 url_of[d] = rec["url"]
             # Only a record that read a narinfo knows the references. The
-            # census appends liveness alone when a path it had recorded dead
-            # answers again, and that record must leave the crawl's reference
-            # list standing rather than blanking it.
+            # legacy graph may contain presence-only records, which must leave
+            # the crawl's reference list standing rather than blanking it.
             if "refs" in rec:
                 refs[d] = rec["refs"]
     print(f"{len(alive)} alive nodes in graph", flush=True)

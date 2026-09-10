@@ -60,7 +60,7 @@ docker run --rm --init --name "$name" \
   --env GH_TOKEN --env GITHUB_TOKEN --env GITHUB_REPOSITORY --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT --env GITHUB_SHA --env GITHUB_ACTOR \
   --env EVAL_WORKERS --env CACHIX_AUTH_TOKEN \
   --env PIPELINE_INPUTS --env PIPELINE_PREVIOUS --env PIPELINE_REVISION --env PIPELINE_REVISION_NAME \
-  --env PIPELINE_LIMIT --env PIPELINE_CENSUS --env PIPELINE_RESULT --env PIPELINE_SHARD \
+  --env PIPELINE_LIMIT --env PIPELINE_RESULT --env PIPELINE_SHARD \
   --env PIPELINE_SHARDS --env PIPELINE_ENRICH_SHARDS --env ENRICH_THREADS \
   --env "NIX_CONFIG=$config" \
   --entrypoint /bin/sh nixos/nix:latest -c '

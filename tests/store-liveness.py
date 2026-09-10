@@ -39,8 +39,8 @@ SEEDS = {
     },
 }
 
-# `back` is how the weekly census writes a resurrection: liveness alone, for a
-# path it already knows, with no references attached.
+# Legacy graphs may contain presence-only records for a previously known path,
+# with no references attached. Preserve compatibility when restoring snapshots.
 GRAPH = [
     {
         "d": CRAWLED,

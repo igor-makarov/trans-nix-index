@@ -14,9 +14,7 @@ const ATTR = "ripgrep";
 // How many revision rows the first window holds — REV_PAGE in site/js/config.js.
 const REV_PAGE = 150;
 
-// The four totals across the top of the stats view. Named rather than counted:
-// the view carries a second KPI row for the cache census, so a bare count of
-// .kpi says nothing about whether these four are the ones that drew.
+// The four totals across the top of the stats view, checked by name.
 const TOTALS = [
   "versioned attributes today",
   "package versions ever",
@@ -87,6 +85,15 @@ test("the stats view draws its totals and every chart", async ({ page }) => {
   for (const total of TOTALS) {
     await expect(page.locator(".kpi .l", { hasText: total })).toBeVisible();
   }
+  await expect(
+    page.getByRole("heading", { name: "Store statistics", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Survival by vintage", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Largest losses", exact: true }),
+  ).toHaveCount(0);
   await expect
     .poll(() => page.locator("h3").count())
     .toBeGreaterThanOrEqual(MIN_STAT_CHARTS);

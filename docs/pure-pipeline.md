@@ -5,8 +5,8 @@
 with `workflow_call` and passes immutable OCI digests between them.
 `pipeline-resume.yml` is a second manual entry point for starting at an existing
 stage input. The old `update-index`, `census`, and `pages` workflows are removed.
-Census tooling is still available as an optional enrichment operation; its removal
-is a separate branch/change.
+Census sweeps are removed; enrichment retains historical observations without
+claiming current cache availability.
 
 ## Components and outputs
 
@@ -81,7 +81,6 @@ without force are historical observations, not a promise of current availability
 - `max_shards`: 1–256, default 20. Actual matrices are capped by revision count.
 - `force`: rerun stages even when inputs are unchanged (default false).
 - `enrich`: enrichment plus site build/tests (default true).
-- `census`: optional payload refresh, forcing enrichment (default false).
 - `deploy`: explicitly deploy a tested site (default false).
 
 `production` scope requires main and an unlimited manifest. Deployment additionally

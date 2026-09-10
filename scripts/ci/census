@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-export MULTIVERSE_ROOT="$PWD/_ci/work"
-bash scripts/ci/restore "$@"
-work="$MULTIVERSE_ROOT/index/.outpaths"
-data="$work/data"
-bash scripts/ci/observe-census
-cp "$data/prev-shards/outs-indexed.json" "$data/outs-indexed.json"
-bash scripts/ci/publish-data census

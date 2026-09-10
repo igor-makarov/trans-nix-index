@@ -1,7 +1,7 @@
 /* ---------- store metadata: cache liveness, deps, closures ----------
  *
  * Everything here rides on two facts. The meta shards carry each version's
- * store digest, sizes, liveness at census time and direct references; and
+ * store digest, sizes and direct references; and
  * cache.nixos.org serves narinfos with open CORS, so anything deeper — is it
  * still there right now, what is the full closure — the browser asks the
  * cache itself. The shards store breadth; the client computes depth. The
@@ -23,9 +23,7 @@ import { refName, refAttr, refVer, useNames, loadFile } from "../data.js";
 import { fmtBytes, pnameOf } from "../format.js";
 import { Link } from "../router.js";
 
-// Asks the cache, live, whether this exact path still substitutes — and what
-// it costs. The census answer from the shard renders immediately; the live
-// answer replaces it when it arrives, so the badge is never stale.
+// Ask the cache live; historical metadata is not a current availability verdict.
 export function CacheBadge({ entry }) {
   const [live, setLive] = useState(null);
   useEffect(() => {
@@ -39,16 +37,8 @@ export function CacheBadge({ entry }) {
   }, [entry.d]);
 
   // A failed fetch says nothing about the path — only a definite 404 does.
-  // Anything else falls back to what the census recorded.
-  //
-  // `ok` can also be absent: the shard carries a verdict only for a digest
-  // something actually probed, so an entry without one has never been looked
-  // at. That is neither of the other two answers, and claiming the census
-  // gave either would be inventing one, so the badge waits for the live
-  // fetch — which is a moment.
-  const verified = live && !live.err;
-  const unknown = !verified && entry.ok == null;
-  const alive = verified ? !live.dead : entry.ok === 1;
+  const unknown = !live || live.err;
+  const alive = !unknown && !live.dead;
   const ns = live?.ns ?? entry.ns;
   const fs = live?.fs ?? entry.fs;
 
@@ -59,9 +49,11 @@ export function CacheBadge({ entry }) {
       >
         ${unknown ? "◍" : alive ? "●" : "○"}
         ${unknown
-          ? " asking the cache"
+          ? live?.err
+            ? " cache availability unknown"
+            : " asking the cache"
           : alive
-            ? ` still substitutable${verified ? "" : " (census)"}`
+            ? " still substitutable"
             : " no longer in the cache"}
       </span>
       ${fs != null &&

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 : "${GITHUB_REPOSITORY:?Set the destination repository}"
-: "${MULTIVERSE_ROOT:?Run update or census first}"
+: "${MULTIVERSE_ROOT:?Run update first}"
 work="$MULTIVERSE_ROOT/index/.outpaths"
 rm -rf _ci/publish
 mkdir -p _ci/publish/{artifacts,state}
@@ -9,13 +9,13 @@ cp "$MULTIVERSE_ROOT"/index/{versions,history,stats}.json _ci/publish/
 cp "$MULTIVERSE_ROOT"/{revisions,releases}.json _ci/publish/
 if [[ "${1:-update}" == metadata ]]; then
   cp -r _ci/previous/artifacts/. _ci/publish/artifacts/
-  cp -r _ci/previous/state/. _ci/publish/state/
+  cp _ci/previous/state/graph.jsonl _ci/publish/state/
 else
   cp "$work"/data/{outpaths-,tip-outpaths-,outs-}*.json _ci/publish/artifacts/
   cp "$work"/data/{info-indexed,refs-indexed,closures,outs-indexed}.json _ci/publish/artifacts/
   cp "$work/graph.jsonl" _ci/publish/state/
   shopt -s nullglob
-  for file in _ci/previous/state/*.json "$work"/data/misses-*.json "$work"/census-results.json; do
+  for file in "$work"/data/misses-*.json; do
     [[ ! -f "$file" ]] || cp "$file" _ci/publish/state/
   done
   if [[ "${1:-update}" == update ]]; then
@@ -27,6 +27,11 @@ with open('_ci/publish/state/store-generator.json', 'w') as output:
 PY
   fi
 fi
+# Carry forward only active state, not retired observation artifacts.
+shopt -s nullglob
+for file in _ci/previous/state/misses-*.json _ci/previous/state/store-generator.json; do
+  [[ ! -f "$file" || -f "_ci/publish/state/$(basename "$file")" ]] || cp "$file" _ci/publish/state/
+done
 python3 tools/snapshot.py _ci/publish _ci/data.tar.gz
 python3 tools/validate-data.py _ci/publish
 # OCI publishes the manifest only after its blob upload succeeds. Advance

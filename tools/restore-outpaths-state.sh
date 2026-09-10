@@ -17,6 +17,3 @@ done
 cp "$snapshot/state/graph.jsonl" "$work/graph.jsonl"
 shopt -s nullglob
 for file in "$snapshot"/state/misses-*.json; do cp "$file" "$data/"; done
-if [[ -f "$snapshot/state/census-results.json" ]]; then
-  cp "$snapshot/state/census-results.json" "$work/census-results.json"
-fi
