@@ -171,33 +171,34 @@ pool limits, without an application concurrency cap. Build files come from
 releases.nixos.org; paginated listings still use the S3 API with HTTP/1.1 fallback.
 Commit metadata requests are deduplicated by SHA within the run. GitHub tokens
 are sent only to the GitHub commit API. Failed discovery writes no input bundle.
-The workflow runs discovery through mise's Docker/Nix environment, including
+The workflow runs discovery through the Docker/Nix wrapper on mise's PATH, including
 HTTPX and h2 dependencies. No GHCR metadata cache is used.
 
 ## Local use
 
 The same derivations work locally; no CI credentials or Cachix uploads are
-required. All commands use the existing Linux Docker wrapper:
+required. Run from the repository root with mise activated so `nix` resolves to
+`scripts/nix`, the existing Linux Docker wrapper:
 
 ```sh
 # One revision, without any manifest:
-mise run nix -- build --file nix/revision-build.nix \
+nix build --file nix/revision-build.nix \
   --argstr name nixos-26.11pre1068949.dc5d91f84032 \
   --argstr rev dc5d91f840324650bac8c379428c7037a416959a \
   all --out-link result-revision -L
 # For a smaller local test, select outputs.x86_64-linux instead of all.
 
-mise run nix -- build --file nix/pipeline-build.nix \
+nix build --file nix/pipeline-build.nix \
   --argstr inputs /workspace/_ci/my-inputs all --out-link result-pipeline -L
 
 # Tiny offline fixtures plus one real nixpkgs package path, under the sandbox:
-mise run nix -- build '.#checks.aarch64-linux.pure-pipeline' --no-link -L
+nix build '.#checks.aarch64-linux.pure-pipeline' --no-link -L
 ```
 
 For local external discovery without uploading anything:
 
 ```sh
-mise run nix -- develop --command python3 tools/discover-pipeline.py \
+nix develop --command python3 tools/discover-pipeline.py \
   _ci/my-inputs --limit 1
 ```
 

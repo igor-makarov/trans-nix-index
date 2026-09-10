@@ -7,8 +7,6 @@ sandbox = true
 extra-substituters = https://trans-nix-index.cachix.org
 extra-trusted-public-keys = trans-nix-index.cachix.org-1:CgtmqltynGk+5llIi/y0gR8Zi/lDSdcoegVGYEG38I8='
 
-# mise runs tasks from the project root; preserve the caller's working directory.
-workdir="${MISE_ORIGINAL_CWD:-$PWD}"
 root="$(cd "$(dirname "$0")/.." && pwd -P)"
 terminal=(-i)
 if [[ -t 0 && -t 1 ]]; then
@@ -54,7 +52,7 @@ heartbeat_pid=$!
 docker run --rm --init --name "$name" \
   --label trans-nix-index.session=true \
   "${terminal[@]}" --pull=always \
-  --mount "type=bind,source=${workdir},target=/workspace" \
+  --mount "type=bind,source=${PWD},target=/workspace" \
   --mount "type=bind,source=${session},target=/run/nix-session,readonly" \
   --mount type=volume,source=trans-nix-index-nix,target=/nix \
   --mount type=volume,source=trans-nix-index-cache,target=/root/.cache/nix \

@@ -3,17 +3,20 @@
 Install [mise](https://mise.jdx.dev/), review `mise.toml` and `mise.lock`, then
 install the configured tools with `mise install`.
 
-All Nix commands run in disposable `nixos/nix:latest` Docker containers:
+With mise activated in your shell, its PATH configuration makes `nix` resolve to
+`scripts/nix`. All Nix commands run in disposable `nixos/nix:latest` Docker
+containers. Without shell activation, use `mise exec -- nix …` instead.
+Run these commands from the repository root:
 
 ```sh
-mise run nix -- build '.#checks-smoke' --no-link -L
-mise run nix -- develop --command bash scripts/ci/pages
-mise run nix -- develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
+nix build '.#checks-smoke' --no-link -L
+nix develop --command bash scripts/ci/pages
+nix develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
 ```
 
 The wrapper shares persistent Nix store/cache volumes. On macOS it uses Colima;
-CI uses Linux ARM and Docker directly. `mise run nix:reset` **deletes both shared
-volumes**, discarding cached downloads and builds.
+CI uses Linux ARM and Docker directly. Keep the shared volumes for local tests;
+there is no reset task.
 
 For a local preview with Python 3 on the host:
 
@@ -76,7 +79,7 @@ Updates from an older snapshot publish a new complete snapshot; they do not modi
 For manual emergency reseeding from upstream's latest:
 
 ```sh
-mise run nix -- develop --command python3 tools/import-seed.py _ci/emergency-seed
+nix develop --command python3 tools/import-seed.py _ci/emergency-seed
 ```
 
 [The seed importer](../tools/import-seed.py) resolves upstream's main commit once,
