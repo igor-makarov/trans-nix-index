@@ -19,18 +19,16 @@ Outputs:
                          that fetches.
 """
 import argparse
-import http.client
+import asyncio
+import httpx
 import json
 import sys
-import threading
 import time
-from queue import Queue
 
 CACHE_HOST = "cache.nixos.org"
 USER_AGENT = "nixpkgs-multiverse-census"
 RETRIES = 3
-# Between attempts, multiplied by the attempt number. Every retry pays this on
-# top of a fresh TLS handshake, which is why they are counted above.
+# Between attempts, multiplied by the attempt number.
 RETRY_BACKOFF_SECONDS = 0.5
 TIMEOUT_SECONDS = 30
 
@@ -65,81 +63,76 @@ def load_seeds(seed_files):
     return seed
 
 
-class Worker(threading.Thread):
-    def __init__(self, q, results, stats):
-        super().__init__(daemon=True)
-        self.q, self.results, self.stats = q, results, stats
-        self.conn = None
+class Census:
+    def __init__(self, client):
+        self.client = client
+        self.retries = {}
 
-    def connect(self):
-        if self.conn:
-            try:
-                self.conn.close()
-            except Exception:
-                pass
-        self.conn = http.client.HTTPSConnection(CACHE_HOST, timeout=TIMEOUT_SECONDS)
-        return self.conn
-
-    def request(self, method, path):
+    async def request(self, method, path):
         for attempt in range(RETRIES):
             try:
-                conn = self.conn or self.connect()
-                conn.request(method, path, headers={"User-Agent": USER_AGENT})
-                r = conn.getresponse()
-                body = r.read()
-                if r.status in (200, 404):
-                    return r.status, body
-                # transient (429/5xx): retry on a fresh connection
-                self.note_retry(f"HTTP {r.status}")
-                self.connect()
-            except Exception as e:
-                self.note_retry(type(e).__name__)
-                self.connect()
-            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+                response = await self.client.request(method, path)
+                if response.status_code in (200, 404):
+                    return response.status_code, response.content
+                reason = f"HTTP {response.status_code}"
+            except httpx.TransportError as error:
+                reason = type(error).__name__
+            if attempt + 1 < RETRIES:
+                self.retries[reason] = self.retries.get(reason, 0) + 1
+                await asyncio.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
         return None, b""
 
-    def note_retry(self, reason):
-        """Count what forced a retry.
-
-        A retry that eventually succeeds is recorded as a plain success, so
-        without this the sleeps below are invisible — and at a few percent of
-        requests they are the difference between a census that takes minutes
-        and one that takes an hour.
-        """
-        with self.stats["lock"]:
-            self.stats["retries"][reason] = self.stats["retries"].get(reason, 0) + 1
-
-    def check(self, digest):
-        status, body = self.request("GET", f"/{digest}.narinfo")
+    async def check(self, digest):
+        status, body = await self.request("GET", f"/{digest}.narinfo")
         if status != 200:
             return {"d": digest, "narinfo": False, "nar": False, "err": status is None}
+        try:
+            fields = dict(
+                line.split(": ", 1)
+                for line in body.decode().splitlines()
+                if ": " in line
+            )
+            nar_url = fields["URL"]
+            # Never let cache metadata redirect probes to another host.
+            if not nar_url.startswith("nar/") or ".." in nar_url.split("/"):
+                raise ValueError("invalid payload URL")
+        except (UnicodeError, KeyError, ValueError):
+            return {"d": digest, "narinfo": True, "nar": False, "err": True}
+        status, _ = await self.request("HEAD", f"/{nar_url}")
+        return {
+            "d": digest,
+            "narinfo": True,
+            "nar": status == 200,
+            "err": status is None,
+        }
 
-        # The narinfo's URL field is relative (nar/<hash>.nar.xz); HEAD it to
-        # prove the payload bytes are still served, not just remembered.
-        nar_url = None
-        for line in body.decode().splitlines():
-            k, _, v = line.partition(": ")
-            if k == "URL":
-                nar_url = v
-                break
-        if not nar_url:
-            return {"d": digest, "narinfo": True, "nar": False}
-        status, _ = self.request("HEAD", f"/{nar_url}")
-        return {"d": digest, "narinfo": True, "nar": status == 200}
 
-    def run(self):
-        while True:
-            digest = self.q.get()
-            if digest is None:
-                return
-            rec = self.check(digest)
-            with self.stats["lock"]:
-                self.results.append(rec)
-                self.stats["done"] += 1
-                n = self.stats["done"]
-            if n % 10000 == 0:
-                rate = n / (time.time() - self.stats["t0"])
-                print(f"  {n} checked ({rate:.0f}/s)", flush=True)
+async def scan(digests):
+    started = time.monotonic()
+    results = []
+    async with httpx.AsyncClient(
+        http2=True,
+        base_url=f"https://{CACHE_HOST}",
+        timeout=httpx.Timeout(TIMEOUT_SECONDS, pool=None),
+        headers={"User-Agent": USER_AGENT},
+    ) as client:
+        census = Census(client)
+        # No semaphore/task cap: HTTPX defaults and server stream limits govern transport.
+        tasks = [asyncio.create_task(census.check(d)) for d in digests]
+        try:
+            for task in asyncio.as_completed(tasks):
+                results.append(await task)
+                if len(results) % 10000 == 0:
+                    print(
+                        f"  {len(results)} checked ({len(results)/(time.monotonic()-started):.0f}/s)",
+                        flush=True,
+                    )
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+    return results, {"retries": census.retries, "t0": started}
 
 
 def main():
@@ -149,35 +142,18 @@ def main():
     ap.add_argument(
         "--graph", help="crawl graph to append liveness changes to (optional)"
     )
-    ap.add_argument("--threads", type=int, default=32)
     ap.add_argument("--date", required=True, help="the snapshot's date, YYYY-MM-DD")
     args = ap.parse_args()
 
     digests = sorted(load_seeds(args.seeds))
     print(f"{len(digests)} digests to check", flush=True)
 
-    stats = {
-        "done": 0,
-        "retries": {},
-        "lock": threading.Lock(),
-        "t0": time.time(),
-    }
-    results = []
-    q = Queue(maxsize=args.threads * 4)
-    workers = [Worker(q, results, stats) for _ in range(args.threads)]
-    for w in workers:
-        w.start()
-    for d in digests:
-        q.put(d)
-    for _ in workers:
-        q.put(None)
-    for w in workers:
-        w.join()
+    results, stats = asyncio.run(scan(digests))
 
     # A digest that timed out through every retry is unknown, not dead; it is
     # excluded from the missing lists so a flaky hour cannot declare a
     # massacre, and the count is reported so a flaky hour is still visible.
-    elapsed = time.time() - stats["t0"]
+    elapsed = time.monotonic() - stats["t0"]
     print(
         f"checked {len(results)} in {elapsed / 60:.1f} min "
         f"({len(results) / elapsed:.0f}/s)",

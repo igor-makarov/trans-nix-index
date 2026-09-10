@@ -25,6 +25,7 @@
       }
       ''
         python3 ${../tests/enrichment.py} ${../tools} | tee "$out"
+        python3 ${../tests/census.py} ${../tools} | tee -a "$out"
       '';
   pure-pipeline = import ../tests/pure-pipeline.nix { inherit pkgs; };
   prepare-merge = pkgs.runCommand "check-prepare-merge" { nativeBuildInputs = [ pkgs.python3 ]; } ''

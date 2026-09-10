@@ -6,7 +6,7 @@ work="$MULTIVERSE_ROOT/index/.outpaths"
 data="$work/data"
 seeds=("$data"/outpaths-*.json "$data"/tip-outpaths-*.json)
 python3 tools/census.py --seeds "${seeds[@]}" \
-  --threads 32 --out "$work/census-results.json" \
+  --out "$work/census-results.json" \
   --graph "$work/graph.jsonl" --date "$(date -u +%F)"
 # Census changes liveness only; reconsolidate without re-evaluating nixpkgs.
 args=()
