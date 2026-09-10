@@ -7,22 +7,18 @@ test -d "$PIPELINE_RESULT/index"
 test -d "$PIPELINE_RESULT/evaluations"
 export MULTIVERSE_ROOT="$PWD/_ci/pure/enrichment-shard"
 export MULTIVERSE_NIX="$PWD/nix"
+# Each execution observes afresh, including local reruns in the same checkout.
+rm -rf "$MULTIVERSE_ROOT/index/.outpaths"
 mkdir -p "$MULTIVERSE_ROOT/index"
 cp "$PIPELINE_RESULT/index/"{revisions,releases}.json "$MULTIVERSE_ROOT/"
 cp "$PIPELINE_RESULT/index/"{history,stats}.json "$MULTIVERSE_ROOT/index/"
 count="$PIPELINE_SHARDS"
 python3 tools/enrichment-shards.py partition --index "$PIPELINE_RESULT/index/versions.json" \
   --shards "$count" --shard "$PIPELINE_SHARD" --output "$MULTIVERSE_ROOT"
-mode=(--full)
-if [[ -n "${PIPELINE_PREVIOUS:-}" ]]; then
-  if [[ "$PIPELINE_PREVIOUS" == /nix/store/* ]]; then cache_pull "$PIPELINE_PREVIOUS"; fi
-  test -d "$PIPELINE_PREVIOUS/snapshot"
-  bash tools/restore-outpaths-state.sh "$PIPELINE_PREVIOUS/snapshot"
-  mode=()
-fi
 systems=$(nix eval --json --file nix/revision-systems.nix | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)))')
-bash tools/update-outpaths.sh "${mode[@]}" --collect-only --systems "$systems" --evaluations "$PIPELINE_RESULT/evaluations"
+bash tools/update-outpaths.sh --full --collect-only --systems "$systems" --evaluations "$PIPELINE_RESULT/evaluations"
 destination="$PWD/_ci/pure/enrichment-artifacts/shard-$PIPELINE_SHARD"
+rm -rf "$destination"
 mkdir -p "$destination/data"
 cp "$MULTIVERSE_ROOT/shard.json" "$destination/"
 cp "$MULTIVERSE_ROOT/index/.outpaths/graph.jsonl" "$destination/"

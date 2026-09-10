@@ -38,6 +38,12 @@
       }
       ''
         python3 ${../tests/enrichment.py} ${../tools} | tee "$out"
+        PATH=${
+          pkgs.lib.makeBinPath [
+            pkgs.bash
+            pkgs.coreutils
+          ]
+        }:$PATH python3 ${../tests/enrichment-refresh.py} ${../.} | tee -a "$out"
       '';
   tree-hashes =
     pkgs.runCommand "check-tree-hashes"

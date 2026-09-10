@@ -6,22 +6,16 @@ source scripts/ci/cachix
 test -d "$PIPELINE_RESULT/index"
 export MULTIVERSE_ROOT="$PWD/_ci/pure/enrichment"
 export MULTIVERSE_NIX="$PWD/nix"
+# Never carry observations from an earlier execution into this snapshot.
+rm -rf "$MULTIVERSE_ROOT/index/.outpaths"
 mkdir -p "$MULTIVERSE_ROOT/index"
 cp "$PIPELINE_RESULT/index/"{revisions,releases}.json "$MULTIVERSE_ROOT/"
 cp "$PIPELINE_RESULT/index/"{versions,history,stats}.json "$MULTIVERSE_ROOT/index/"
-mode=(--full)
-if [[ -n "${PIPELINE_PREVIOUS:-}" ]]; then
-  if [[ "$PIPELINE_PREVIOUS" == /nix/store/* ]]; then cache_pull "$PIPELINE_PREVIOUS"; fi
-  # Never crawl all history because an incremental base lacks enrichment.
-  test -d "$PIPELINE_PREVIOUS/snapshot"
-  bash tools/restore-outpaths-state.sh "$PIPELINE_PREVIOUS/snapshot"
-  mode=()
-fi
 systems=$(nix eval --json --file nix/revision-systems.nix | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)))')
 if [[ -n "${PIPELINE_ENRICH_SHARDS:-}" ]]; then
   bash scripts/ci/merge-enrichment
 else
-  bash tools/update-outpaths.sh "${mode[@]}" --systems "$systems" \
+  bash tools/update-outpaths.sh --full --systems "$systems" \
     --evaluations "$PIPELINE_RESULT/evaluations"
 fi
 staging=$(mktemp -d "$PWD/_ci/pure/snapshot.XXXXXXXX")

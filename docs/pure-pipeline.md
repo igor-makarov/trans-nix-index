@@ -28,8 +28,9 @@ pure-index (manual; validates options and serializes the namespace)
   validates exact receipt coverage, fetches the JSONs in one fetch-only Nix call,
   and merges locally. The artifact contains `index/` and `evaluations/`.
 - **pipeline-enrich.yml** checks its input digest and partitions attributes across
-  shards. It probes cache membership and crawls runtime references, optionally
-  restoring observations from the previous enriched snapshot. Merge validates
+  shards. Whenever it runs, it starts with empty observation state, probes cache
+  membership and crawls runtime references anew. Prior successes and 404s are
+  not restored, including on local reruns. Merge validates
   shard coverage and calculates closures globally. Its OCI artifact contains
   `enriched-snapshot.tar.gz`, with index JSON, store artifacts, crawl state and
   an internal checksum manifest. HTTP observations are not Nix derivations.
@@ -69,8 +70,12 @@ archive SHA-256 and size. No package payloads are fetched during ordinary enrich
 
 Code/configuration changes do not implicitly change this simple input comparison.
 Use **force** when changing extraction, enrichment, site code or tests. Force reruns
-stages while immutable revision outputs can still hit Cachix. Observations reused
-without force are historical observations, not a promise of current availability.
+stages while immutable revision outputs can still hit Cachix. Enrichment either
+skips entirely for an already-consumed input, or performs a full observation
+refresh. Force bypasses that skip; it does not change the refresh behavior.
+Within an execution, requests are deduplicated. Failed-job reruns may retain
+successful shard receipts from the same workflow run. Skipped snapshots retain
+historical observations; even refreshed narinfos do not verify NAR payloads.
 
 ## Manual controls and isolation
 

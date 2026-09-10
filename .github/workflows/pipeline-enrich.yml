@@ -33,7 +33,6 @@ jobs:
       run: ${{ steps.plan.outputs.run }}
       digest: ${{ steps.plan.outputs.digest }}
       matrix: ${{ steps.plan.outputs.matrix }}
-      previous: ${{ steps.plan.outputs.previous }}
     env:
       FORCE: ${{ inputs.force }}
       MAX_SHARDS: ${{ inputs.max_shards }}
@@ -48,7 +47,7 @@ jobs:
           force=()
           if [[ "$FORCE" == true ]]; then force=(--force); fi
           nix develop --command python3 tools/pipeline-artifact.py check enriched-snapshot --repository "$REPOSITORY" --input "$UPSTREAM" "${force[@]}" > _ci/check.json
-          python3 -c 'import json; d=json.load(open("_ci/check.json")); print("run="+str(d["run"]).lower()); print("digest="+d["digest"]); print("previous="+d["previous"])' >> "$GITHUB_OUTPUT"
+          python3 -c 'import json; d=json.load(open("_ci/check.json")); print("run="+str(d["run"]).lower()); print("digest="+d["digest"])' >> "$GITHUB_OUTPUT"
           echo 'matrix={"include":[{"shard":0}]}' >> "$GITHUB_OUTPUT"
           if [[ $(python3 -c 'import json; print(json.load(open("_ci/check.json"))["run"])') == True ]]; then
             nix develop --command python3 tools/pipeline-artifact.py pull revision-index --repository "$REPOSITORY" --digest "$UPSTREAM" --path _ci/pure/merged-revisions
@@ -64,7 +63,6 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       PIPELINE_RESULT: /workspace/_ci/pure/merged-revisions
-      PREVIOUS: ${{ needs.plan.outputs.previous }}
       PIPELINE_SHARD: ${{ strategy.job-index }}
       PIPELINE_SHARDS: ${{ strategy.job-total }}
     steps:
@@ -75,10 +73,7 @@ jobs:
       - name: Pull revision index by digest
         run: nix develop --command python3 tools/pipeline-artifact.py pull revision-index --repository "$REPOSITORY" --digest "$UPSTREAM" --path _ci/pure/merged-revisions
       - name: Observe assigned roots and dependencies
-        run: |
-          nix develop --command bash scripts/ci/pull-previous "$REPOSITORY" "$PREVIOUS"
-          if [[ -n "$PREVIOUS" ]]; then export PIPELINE_PREVIOUS=/workspace/_ci/pure/previous; fi
-          nix develop --command bash scripts/ci/enrich-shard
+        run: nix develop --command bash scripts/ci/enrich-shard
       - uses: actions/upload-artifact@v7
         with:
           name: observations-${{ strategy.job-index }}-${{ github.run_attempt }}
@@ -95,7 +90,6 @@ jobs:
       PIPELINE_RESULT: /workspace/_ci/pure/merged-revisions
       PIPELINE_ENRICH_SHARDS: /workspace/_ci/pure/enrichment-artifacts
       MATRIX: ${{ needs.plan.outputs.matrix }}
-      PREVIOUS: ${{ needs.plan.outputs.previous }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -112,8 +106,6 @@ jobs:
         run: |
           nix develop --command python3 tools/pipeline-artifact.py pull revision-index --repository "$REPOSITORY" --digest "$UPSTREAM" --path _ci/pure/merged-revisions
           export PIPELINE_SHARDS=$(python3 -c 'import json,os; print(len(json.loads(os.environ["MATRIX"])["include"]))')
-          nix develop --command bash scripts/ci/pull-previous "$REPOSITORY" "$PREVIOUS"
-          if [[ -n "$PREVIOUS" ]]; then export PIPELINE_PREVIOUS=/workspace/_ci/pure/previous; fi
           nix develop --command bash scripts/ci/enrich-pure
           mkdir -p _ci/pure/snapshot-export
           cp _ci/pure/enriched-snapshot.tar.gz _ci/pure/snapshot-export/
