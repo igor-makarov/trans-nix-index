@@ -76,7 +76,7 @@ jobs:
     with:
       repository: ${{ needs.source.outputs.repository }}
       digest: ${{ needs.source.outputs.digest }}
-      max_shards: ${{ inputs.max_shards }}
+      max_shards: ${{ fromJSON(format('{0}', inputs.max_shards)) }}
       force: ${{ inputs.force }}
   enrich:
     needs: [source, index]
@@ -85,7 +85,7 @@ jobs:
     with:
       repository: ${{ needs.source.outputs.repository }}
       digest: ${{ needs.index.outputs.digest || needs.source.outputs.digest }}
-      max_shards: ${{ inputs.max_shards }}
+      max_shards: ${{ fromJSON(format('{0}', inputs.max_shards)) }}
       force: ${{ inputs.force }}
   site:
     needs: [source, enrich]

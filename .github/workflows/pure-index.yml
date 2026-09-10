@@ -80,7 +80,7 @@ jobs:
     with:
       repository: ${{ needs.validate.outputs.repository }}
       digest: ${{ needs.discover.outputs.digest }}
-      max_shards: ${{ inputs.max_shards }}
+      max_shards: ${{ fromJSON(format('{0}', inputs.max_shards)) }}
       force: ${{ inputs.force }}
   enrich:
     needs: [validate, index]
@@ -89,7 +89,7 @@ jobs:
     with:
       repository: ${{ needs.validate.outputs.repository }}
       digest: ${{ needs.index.outputs.digest }}
-      max_shards: ${{ inputs.max_shards }}
+      max_shards: ${{ fromJSON(format('{0}', inputs.max_shards)) }}
       force: ${{ inputs.force || inputs.census }}
       census: ${{ inputs.census }}
   site:
