@@ -55,7 +55,8 @@ jobs:
           echo 'matrix={"include":[{"shard":0}]}' >> "$GITHUB_OUTPUT"
           if [[ $(python3 -c 'import json; print(json.load(open("_ci/check.json"))["run"])') == True ]]; then
             nix develop --command python3 tools/pipeline-artifact.py pull revision-manifest --repository "$REPOSITORY" --digest "$UPSTREAM" --path _ci/pure/inputs
-            python3 tools/revision-shards.py plan _ci/pure/inputs/matrix.json --shards "$MAX_SHARDS"
+            nix develop --command env GITHUB_OUTPUT=/workspace/_ci/pure/plan.outputs python3 tools/revision-shards.py plan _ci/pure/inputs/matrix.json --shards "$MAX_SHARDS"
+            cat _ci/pure/plan.outputs >> "$GITHUB_OUTPUT"
           fi
       - id: artifact
         uses: actions/upload-artifact@v7

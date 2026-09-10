@@ -56,6 +56,7 @@ jobs:
       - uses: jdx/mise-action@v4
       - name: Pull snapshot, build, and browser-test
         run: |
+          mkdir -p _ci/pure
           nix develop --command python3 tools/pipeline-artifact.py pull enriched-snapshot --repository "$REPOSITORY" --digest "$UPSTREAM" --path _ci/pure/snapshot-input
           cp _ci/pure/snapshot-input/enriched-snapshot.tar.gz _ci/pure/
           nix develop --command bash scripts/ci/pages-pure
