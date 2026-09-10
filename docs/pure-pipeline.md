@@ -174,6 +174,21 @@ are sent only to the GitHub commit API. Failed discovery writes no input bundle.
 The workflow runs discovery through the Docker/Nix wrapper on mise's PATH, including
 HTTPX and h2 dependencies. No GHCR metadata cache is used.
 
+## Local site verification
+
+Use `scripts/ci/pages-pure`, matching this workflow's `pages` job. The legacy
+`scripts/ci/pages` fetches GHCR data and is not the local verification path.
+Download the `enriched-snapshot` artifact from a successful enrichment run
+(retries add an attempt suffix), placing its `enriched-snapshot.tar.gz` in
+`_ci/pure/`, or use the archive produced by local pure enrichment.
+
+```sh
+nix develop --command bash scripts/ci/pages-pure
+```
+
+This verifies the archive, builds `_site`, and runs browser tests without deploying.
+It requires the enriched snapshot, not the merged-revisions archive.
+
 ## Local use
 
 The same derivations work locally; no CI credentials or Cachix uploads are

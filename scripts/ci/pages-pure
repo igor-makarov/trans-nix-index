@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 snapshot="$PWD/_ci/pure/pages-snapshot"
-test ! -e "$snapshot"
+test -f "$PWD/_ci/pure/enriched-snapshot.tar.gz"
+# Replace only the unpacked input; keep the archive and persistent Nix cache.
+rm -rf -- "$snapshot"
 PYTHONPATH="$PWD/tools" python3 -c 'import snapshot,sys; snapshot.unpack(sys.argv[1], sys.argv[2])' \
   "$PWD/_ci/pure/enriched-snapshot.tar.gz" "$snapshot"
 python3 tools/validate-data.py "$snapshot"

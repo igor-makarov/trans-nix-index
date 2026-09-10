@@ -10,8 +10,8 @@ Run these commands from the repository root:
 
 ```sh
 nix build '.#checks-smoke' --no-link -L
-nix develop --command bash scripts/ci/pages
-nix develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
+# Requires _ci/pure/enriched-snapshot.tar.gz; see below.
+nix develop --command bash scripts/ci/pages-pure
 ```
 
 The wrapper shares persistent Nix store/cache volumes. On macOS it uses Colima;
@@ -26,7 +26,30 @@ SITE_ROOT="$PWD/_site" python3 tools/serve-site.py 8000
 
 Open `http://127.0.0.1:8000` while the server is running.
 
-## Snapshot-based builds
+## Pure pipeline site builds
+
+Use the `pages` job in `.github/workflows/pure-index.yml`, not the legacy
+GHCR-backed Pages workflow. Download the `enriched-snapshot` artifact from a
+successful `pure-index` enrichment run (retry artifacts have an attempt suffix)
+into `_ci/pure/`. It must provide `_ci/pure/enriched-snapshot.tar.gz`.
+Local pure enrichment can produce the same archive.
+
+[The pure Pages script](../scripts/ci/pages-pure) verifies and unpacks that archive
+into `_ci/pure/pages-snapshot`, validates the data, builds the site with an explicit
+snapshot path and NAR hash, copies the result into `_site`, and runs browser tests.
+It does not deploy when run locally. Each run replaces the previous unpacked
+`_ci/pure/pages-snapshot` directory automatically, preserving the archive and Nix cache.
+Do not fetch a GHCR snapshot as a fallback for local verification.
+
+To rerun just the browser tests:
+
+```sh
+nix develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
+```
+
+## Legacy OCI snapshot builds
+
+The following describes the old publication path, not the supported local verification path.
 
 [The resolver](../tools/resolve-data.py) resolves the GHCR `latest` tag once to an immutable OCI digest,
 downloads the self-contained `data.tar.gz`, verifies its SHA-256 digest, and unpacks
@@ -72,7 +95,10 @@ Census regenerates availability artifacts and publishes a complete snapshot with
 
 ## Recovery
 
-Restore any complete OCI snapshot of ours by passing `--tag <tag>` or
+For pure Pages builds, select a successful run's enriched snapshot artifact and
+repeat the pure pipeline site build above.
+
+For the legacy OCI pipeline only, restore any complete OCI snapshot of ours by passing `--tag <tag>` or
 `--digest sha256:<digest>` to `scripts/ci/pages` or `scripts/ci/update`.
 Updates from an older snapshot publish a new complete snapshot; they do not modify the old one.
 

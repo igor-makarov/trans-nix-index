@@ -10,12 +10,18 @@ nix fmt -- --ci
 # Run data pipeline and tooling tests.
 nix build '.#checks-smoke' --no-link -L
 
-# Build the site from one published snapshot.
-nix develop --command bash scripts/ci/pages
+# Build and browser-test the pure pipeline's enriched snapshot.
+# Requires _ci/pure/enriched-snapshot.tar.gz from a successful pure-index enrichment.
+nix develop --command bash scripts/ci/pages-pure
 
-# Run browser tests against the built site.
+# Optionally rerun browser tests against the built site.
 nix develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
 ```
+
+Use the `pages` job in `.github/workflows/pure-index.yml` as the reference.
+Obtain its `enriched-snapshot` artifact (retry runs have an attempt suffix) and
+place `enriched-snapshot.tar.gz` under `_ci/pure/`, or produce it locally through
+pure enrichment. Do not use the legacy GHCR-backed `scripts/ci/pages` for verification.
 
 ## Guidelines
 

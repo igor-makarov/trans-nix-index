@@ -7,7 +7,8 @@ repository's Docker Nix wrapper. The build toolchain is pinned in source.
 - **ci:** formatting, extraction/merge/liveness/OCI tests, generated-data exclusion, site build, browser tests.
 - **update-index:** hourly change detection against our latest snapshot. No changes means no evaluation, crawl, publication, or Pages build. Release-channel-only changes reuse existing index/store data; new revisions or stale store coverage trigger incremental work.
 - **census:** weekly availability checks, publishing a complete snapshot with refreshed availability artifacts.
-- **pages:** builds and tests one published snapshot, then deploys after a successful publication or site-source change.
+- **pure-index / pages:** builds and browser-tests the exact enriched snapshot artifact from `merge_enrichment`, then deploys when requested. This is the reference path for local site verification: `scripts/ci/pages-pure`.
+- **pages (legacy workflow):** builds a GHCR snapshot after publication or site-source changes. Do not use this workflow's `scripts/ci/pages` for local verification; use the pure pipeline artifact instead.
 
 ## Snapshot layout
 
