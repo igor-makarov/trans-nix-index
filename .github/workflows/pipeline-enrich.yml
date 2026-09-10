@@ -19,7 +19,7 @@ on:
         default: false
     outputs:
       digest:
-        value: ${{ jobs.build.outputs.digest || jobs.plan.outputs.digest }}
+        value: ${{ jobs.merge.outputs.digest || jobs.plan.outputs.digest }}
 permissions:
   actions: read
   contents: read
@@ -88,7 +88,7 @@ jobs:
           path: _ci/pure/enrichment-artifacts/
           if-no-files-found: error
           retention-days: 7
-  build:
+  merge:
     needs: [plan, shards]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
