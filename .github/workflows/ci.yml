@@ -15,16 +15,16 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/mise
+      - uses: jdx/mise-action@v4
       - name: Formatting
-        run: mise run nix -- fmt -- --ci
+        run: nix fmt -- --ci
       - name: Data pipeline and tooling tests
-        run: mise run nix -- build '.#checks-smoke' --no-link -L
+        run: nix build '.#checks-smoke' --no-link -L
       - name: Verify generated data stays untracked
         run: |
           test -z "$(git ls-files 'index/*' '*versions.json' '*history.json' 'revisions.json' 'releases.json' 'data-pins.json' 'index-pin.json')"
           test ! -d mvs
       - name: Build site from one published snapshot
-        run: mise run nix -- develop --command bash scripts/ci/pages
+        run: nix develop --command bash scripts/ci/pages
       - name: Browser tests
-        run: mise run nix -- develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
+        run: nix develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'

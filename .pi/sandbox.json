@@ -1,5 +1,5 @@
 {
   "unsandboxedCommands": [
-    "mise run nix -- *"
+    "nix *"
   ]
 }

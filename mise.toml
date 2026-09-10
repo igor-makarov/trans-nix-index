@@ -1,17 +1,11 @@
-[tools]
-colima = "latest"
-docker-cli = "latest"
-lima = "latest"
-
 [settings]
 lockfile = true
 lockfile_platforms = ["macos-arm64", "linux-arm64"]
 
-[tasks.nix]
-description = "Run Nix in Docker against the current directory"
-run = "./scripts/nix"
-raw = true
+[env]
+_.path = ["./scripts"]
 
-[tasks."nix:reset"]
-description = "Delete the shared Nix store and cache volumes (destructive; recreated on next run)"
-run = "docker volume rm trans-nix-index-nix trans-nix-index-cache"
+[tools]
+colima = { version = "latest", os = ["macos"] }
+docker-cli = { version = "latest", os = ["macos"] }
+lima = { version = "latest", os = ["macos"] }

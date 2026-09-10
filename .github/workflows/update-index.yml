@@ -22,6 +22,6 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: ./.github/actions/mise
+      - uses: jdx/mise-action@v4
       - name: Restore latest snapshot, update incrementally, publish OCI artifact
-        run: mise run nix -- develop --command bash scripts/ci/update
+        run: nix develop --command bash scripts/ci/update
