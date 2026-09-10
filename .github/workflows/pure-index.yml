@@ -1,265 +1,108 @@
 name: pure-index
-run-name: pure index (${{ inputs.limit || 'all' }} revisions)
+run-name: pure index (${{ inputs.limit || 'all' }} revisions, ${{ inputs.scope }})
 on:
   workflow_dispatch:
     inputs:
-      observation_previous:
-        description: 'Optional enriched snapshot for cache-observation reuse only'
+      scope:
+        description: 'GHCR namespace: production or a named trial (e.g. trial-400)'
         type: string
-        default: ''
+        default: trial
       limit:
-        description: 'Maximum recent revisions (positive integer; blank = unlimited)'
+        description: 'Maximum recent revisions; blank means all'
         type: string
         default: ''
       max_shards:
-        description: 'Maximum revision and enrichment shards (1–256)'
+        description: 'Revision and enrichment shards (1–256)'
         type: number
-        default: 256
-      enrich:
-        description: 'Run external cache observation (can be expensive)'
+        default: 20
+      force:
+        description: 'Rerun stages even when their input digest is unchanged'
         type: boolean
         default: false
+      enrich:
+        description: 'Enrich the index and build/browser-test the site'
+        type: boolean
+        default: true
       census:
-        description: 'Also census known paths and NAR payloads'
+        description: 'Refresh payload observations (requires force for unchanged inputs)'
         type: boolean
         default: false
       deploy:
-        description: 'Deploy after observation and browser tests'
+        description: 'Deploy tested site (main, production, full index only)'
         type: boolean
         default: false
-env:
-  PIPELINE_MAX_SHARDS: ${{ inputs.max_shards }}
 permissions:
+  actions: read
   contents: read
-# Covers the entire graph, including optional observation and deployment.
+  packages: write
+  pages: write
+  id-token: write
+# Named tags are mutable: serialize their producers for the entire pipeline.
 concurrency:
-  group: pure-index-trial
+  group: pure-index-${{ inputs.scope }}
   cancel-in-progress: false
 jobs:
-  discover:
+  validate:
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
     outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
-      manifest: ${{ steps.manifest.outputs.artifact-id }}
+      repository: ${{ steps.validate.outputs.repository }}
     env:
-      GH_TOKEN: ${{ github.token }}
-      PIPELINE_LIMIT: ${{ inputs.limit }}
-      PIPELINE_ENRICH: ${{ inputs.enrich }}
-      PIPELINE_CENSUS: ${{ inputs.census }}
-      PIPELINE_DEPLOY: ${{ inputs.deploy }}
+      SCOPE: ${{ inputs.scope }}
+      LIMIT: ${{ inputs.limit }}
+      SHARDS: ${{ inputs.max_shards }}
+      ENRICH: ${{ inputs.enrich }}
+      CENSUS: ${{ inputs.census }}
+      DEPLOY: ${{ inputs.deploy }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Validate rollout gates
+      - id: validate
         run: |
-          if [[ ! "$PIPELINE_MAX_SHARDS" =~ ^[1-9][0-9]{0,2}$ ]] || (( PIPELINE_MAX_SHARDS > 256 )); then
-            echo 'max_shards must be an integer from 1 to 256' >&2
-            exit 1
+          [[ "$SCOPE" =~ ^[a-z][a-z0-9-]{0,40}$ ]]
+          [[ -z "$LIMIT" || "$LIMIT" =~ ^[1-9][0-9]*$ ]]
+          [[ "$SHARDS" =~ ^[1-9][0-9]{0,2}$ ]] && (( SHARDS <= 256 ))
+          if [[ "$SCOPE" == production ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main && -z "$LIMIT" ]]
           fi
-          if [[ ( "$PIPELINE_DEPLOY" == true || "$PIPELINE_CENSUS" == true ) && "$PIPELINE_ENRICH" != true ]]; then
-            echo 'Deployment and census require enrichment' >&2
-            exit 1
+          if [[ "$DEPLOY" == true ]]; then
+            [[ "$SCOPE" == production && "$ENRICH" == true ]]
           fi
-      - uses: jdx/mise-action@v4
-      - name: Discover channel metadata over HTTP/2
-        run: nix develop --command bash scripts/ci/discover-pure
-      - id: plan
-        name: Partition revisions into bounded shards
-        run: python3 tools/revision-shards.py plan _ci/pure/inputs/matrix.json --shards "$PIPELINE_MAX_SHARDS"
-      - id: manifest
-        uses: actions/upload-artifact@v7
-        with:
-          name: revision-build-plan${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
-          path: _ci/pure/inputs/
-          if-no-files-found: error
-          retention-days: 30
-  revisions:
-    needs: discover
-    name: revision shard ${{ strategy.job-index }}
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
-    env:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      PIPELINE_SHARD: ${{ strategy.job-index }}
-      PIPELINE_SHARDS: ${{ strategy.job-total }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v8
-        with:
-          artifact-ids: ${{ needs.discover.outputs.manifest }}
-          merge-multiple: true
-          path: _ci/pure/inputs
-      - uses: jdx/mise-action@v4
-      - name: Skip cached revisions; build and publish missing ones
-        run: python3 tools/monitor-runner.py _ci/pure/metrics/runner.jsonl nix develop --command python3 tools/revision-shards.py build _ci/pure/inputs/matrix.json --shards "$PIPELINE_SHARDS"
-      - name: Publish revision output receipts
-        uses: actions/upload-artifact@v7
-        with:
-          name: cached-revision-paths-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
-          path: _ci/pure/inputs/revision-paths/
-          if-no-files-found: error
-          retention-days: 30
-      - name: Upload runner utilization
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: resource-usage-revision-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
-          path: _ci/pure/metrics/
-          retention-days: 7
-  merge_revisions:
-    name: merge revisions
-    needs: [discover, revisions]
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 120
-    outputs:
-      artifact: ${{ steps.result.outputs.artifact-id }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v8
-        with:
-          artifact-ids: ${{ needs.discover.outputs.manifest }}
-          merge-multiple: true
-          path: _ci/pure/inputs
-      - uses: jdx/mise-action@v4
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: cached-revision-paths-shard-*${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
-          merge-multiple: true
-          path: _ci/pure/inputs/revision-paths
-      - name: Merge cached revisions
-        run: nix develop --command bash scripts/ci/merge-pure
-      - id: result
-        uses: actions/upload-artifact@v7
-        with:
-          name: merged-revisions${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
-          path: _ci/pure/merged-revisions.tar.gz
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 7
+          if [[ "$CENSUS" == true ]]; then [[ "$ENRICH" == true ]]; fi
+          echo "repository=ghcr.io/${GITHUB_REPOSITORY,,}-pipeline-$SCOPE" >> "$GITHUB_OUTPUT"
+  discover:
+    needs: validate
+    uses: ./.github/workflows/pipeline-discover.yml
+    with:
+      repository: ${{ needs.validate.outputs.repository }}
+      limit: ${{ inputs.limit }}
+  index:
+    needs: [validate, discover]
+    uses: ./.github/workflows/pipeline-index.yml
+    secrets: inherit
+    with:
+      repository: ${{ needs.validate.outputs.repository }}
+      digest: ${{ needs.discover.outputs.digest }}
+      max_shards: ${{ inputs.max_shards }}
+      force: ${{ inputs.force }}
   enrich:
-    name: enrichment shard ${{ strategy.job-index }}
-    needs: [discover, merge_revisions]
+    needs: [validate, index]
     if: inputs.enrich
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
-    env:
-      PIPELINE_RESULT: /workspace/_ci/pure/merged-revisions
-      PIPELINE_PREVIOUS: ${{ inputs.observation_previous }}
-      PIPELINE_SHARD: ${{ strategy.job-index }}
-      PIPELINE_SHARDS: ${{ strategy.job-total }}
-    outputs:
-      shards: ${{ strategy.job-total }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@v4
-      - uses: actions/download-artifact@v8
-        with:
-          artifact-ids: ${{ needs.merge_revisions.outputs.artifact }}
-          path: _ci/pure
-      - name: Unpack merged revisions
-        run: mkdir -p _ci/pure/merged-revisions && tar -xzf _ci/pure/merged-revisions.tar.gz -C _ci/pure/merged-revisions
-      - name: crawl assigned package roots and dependencies
-        run: python3 tools/monitor-runner.py _ci/pure/enrichment-metrics/runner.jsonl nix develop --command bash scripts/ci/enrich-shard
-      - name: publish enrichment observations
-        uses: actions/upload-artifact@v7
-        with:
-          name: enrichment-observations-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
-          path: _ci/pure/enrichment-artifacts/
-          if-no-files-found: error
-          retention-days: 7
-      - name: publish enrichment resource usage
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: resource-usage-enrichment-shard-${{ strategy.job-index }}${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
-          path: _ci/pure/enrichment-metrics/
-          retention-days: 7
-  merge_enrichment:
-    name: merge enrichment
-    needs: [merge_revisions, enrich]
-    if: inputs.enrich
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 360
-    outputs:
-      artifact: ${{ steps.result.outputs.artifact-id }}
-    env:
-      PIPELINE_RESULT: /workspace/_ci/pure/merged-revisions
-      PIPELINE_ENRICH_SHARDS: /workspace/_ci/pure/enrichment-artifacts
-      PIPELINE_SHARDS: ${{ needs.enrich.outputs.shards }}
-      PIPELINE_PREVIOUS: ${{ inputs.observation_previous }}
-      PIPELINE_CENSUS: ${{ inputs.census }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@v4
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: enrichment-observations-shard-*${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
-          merge-multiple: true
-          path: _ci/pure/enrichment-artifacts
-      - uses: actions/download-artifact@v8
-        with:
-          artifact-ids: ${{ needs.merge_revisions.outputs.artifact }}
-          path: _ci/pure
-      - name: Unpack merged revisions
-        run: mkdir -p _ci/pure/merged-revisions && tar -xzf _ci/pure/merged-revisions.tar.gz -C _ci/pure/merged-revisions
-      - name: merge observations and optionally census payloads
-        run: nix develop --command bash scripts/ci/enrich-pure
-      - id: result
-        uses: actions/upload-artifact@v7
-        with:
-          name: enriched-snapshot${{ github.run_attempt > 1 && format('-attempt-{0}', github.run_attempt) || '' }}
-          path: _ci/pure/enriched-snapshot.tar.gz
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 30
-  pages:
-    needs: merge_enrichment
+    uses: ./.github/workflows/pipeline-enrich.yml
+    with:
+      repository: ${{ needs.validate.outputs.repository }}
+      digest: ${{ needs.index.outputs.digest }}
+      max_shards: ${{ inputs.max_shards }}
+      force: ${{ inputs.force || inputs.census }}
+      census: ${{ inputs.census }}
+  site:
+    needs: [validate, enrich]
+    uses: ./.github/workflows/pipeline-site.yml
+    with:
+      repository: ${{ needs.validate.outputs.repository }}
+      digest: ${{ needs.enrich.outputs.digest }}
+      force: ${{ inputs.force }}
+  deploy:
+    needs: [validate, site]
     if: inputs.deploy
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 120
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@v4
-      - uses: actions/download-artifact@v8
-        with:
-          artifact-ids: ${{ needs.merge_enrichment.outputs.artifact }}
-          path: _ci/pure
-      - name: Build and browser-test this exact snapshot
-        run: nix develop --command bash scripts/ci/pages-pure
-      - uses: actions/configure-pages@v6
-        if: inputs.deploy
-      - uses: actions/upload-pages-artifact@v5
-        if: inputs.deploy
-        with:
-          path: _site
-      - id: deployment
-        uses: actions/deploy-pages@v5
-        if: inputs.deploy
+    uses: ./.github/workflows/pipeline-deploy.yml
+    with:
+      repository: ${{ needs.validate.outputs.repository }}
+      digest: ${{ needs.site.outputs.digest }}

@@ -11,7 +11,7 @@ cp "$PIPELINE_RESULT/index/"{revisions,releases}.json "$MULTIVERSE_ROOT/"
 cp "$PIPELINE_RESULT/index/"{versions,history,stats}.json "$MULTIVERSE_ROOT/index/"
 mode=(--full)
 if [[ -n "${PIPELINE_PREVIOUS:-}" ]]; then
-  cache_pull "$PIPELINE_PREVIOUS"
+  if [[ "$PIPELINE_PREVIOUS" == /nix/store/* ]]; then cache_pull "$PIPELINE_PREVIOUS"; fi
   # Never crawl all history because an incremental base lacks enrichment.
   test -d "$PIPELINE_PREVIOUS/snapshot"
   bash tools/restore-outpaths-state.sh "$PIPELINE_PREVIOUS/snapshot"

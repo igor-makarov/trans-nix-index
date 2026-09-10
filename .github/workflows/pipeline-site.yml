@@ -1,0 +1,65 @@
+name: pipeline-site
+on:
+  workflow_call:
+    inputs:
+      repository:
+        type: string
+        required: true
+      digest:
+        type: string
+        required: true
+      force:
+        type: boolean
+        default: false
+    outputs:
+      digest:
+        value: ${{ jobs.build.outputs.digest || jobs.plan.outputs.digest }}
+permissions:
+  contents: read
+  packages: write
+env:
+  GH_TOKEN: ${{ github.token }}
+  REPOSITORY: ${{ inputs.repository }}
+  UPSTREAM: ${{ inputs.digest }}
+jobs:
+  plan:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      digest: ${{ steps.plan.outputs.digest }}
+    env:
+      FORCE: ${{ inputs.force }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - id: plan
+        run: |
+          mkdir -p _ci/pure
+          force=()
+          if [[ "$FORCE" == true ]]; then force=(--force); fi
+          nix develop --command python3 tools/pipeline-artifact.py check site --repository "$REPOSITORY" --input "$UPSTREAM" "${force[@]}" > _ci/check.json
+          python3 -c 'import json; d=json.load(open("_ci/check.json")); print("run="+str(d["run"]).lower()); print("digest="+d["digest"])' >> "$GITHUB_OUTPUT"
+  build:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - name: Pull snapshot, build, and browser-test
+        run: |
+          nix develop --command python3 tools/pipeline-artifact.py pull enriched-snapshot --repository "$REPOSITORY" --digest "$UPSTREAM" --path _ci/pure/snapshot-input
+          cp _ci/pure/snapshot-input/enriched-snapshot.tar.gz _ci/pure/
+          nix develop --command bash scripts/ci/pages-pure
+      - id: publish
+        run: |
+          digest=$(nix develop --command python3 tools/pipeline-artifact.py publish site --repository "$REPOSITORY" --input "$UPSTREAM" --path _site)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"

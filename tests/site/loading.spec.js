@@ -103,11 +103,15 @@ test("a visited view keeps its state across a trip to another tab", async ({
   // The reason the fix latches "has been visited" instead of just rendering
   // the active view: paging deeper into the revisions list, looking at
   // something else and coming back must not silently rewind the window.
+  const revisions = await (await page.request.get("/revisions.json")).json();
+  test.skip(revisions.length <= 150, "snapshot has no second revision page");
   await page.goto("/?view=revisions");
   const rows = page.locator(".row.cols-rev");
+  await expect(rows).toHaveCount(150);
   const firstWindow = await rows.count();
 
   await page.locator("button.more", { hasText: "show" }).click();
+  await expect(rows).toHaveCount(Math.min(300, revisions.length));
   const widened = await rows.count();
   expect(widened).toBeGreaterThan(firstWindow);
 

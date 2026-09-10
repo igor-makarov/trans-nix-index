@@ -1,5 +1,18 @@
 { pkgs, system }:
 {
+  pipeline-artifact =
+    pkgs.runCommand "check-pipeline-artifact"
+      {
+        nativeBuildInputs = [
+          pkgs.python3
+          pkgs.oras
+        ];
+      }
+      ''
+        python3 ${../tests/pipeline-artifact.py} ${../tools} | tee "$out"
+        python3 ${../tests/pipeline-oci.py} ${../tools} | tee -a "$out"
+        python3 ${../tests/pipeline-receipts.py} ${../tools} | tee -a "$out"
+      '';
   combine-revision =
     pkgs.runCommand "check-combine-revision" { nativeBuildInputs = [ pkgs.python3 ]; }
       ''
@@ -81,11 +94,6 @@
         for script in ${../scripts/ci}/* ${../tools}/*.sh; do bash -n "$script"; done
         # Workflow policy: automation publishes OCI snapshots, never source commits.
         if grep -E 'git (add|commit|push)' .github/workflows/*.yml ${../scripts/ci}/*; then exit 1; fi
-        # Automation defaults on; manual dispatch bypasses the opt-out gates.
-        for workflow in census update-index; do
-          grep -Fq "github.event_name == 'workflow_dispatch' || vars.DISABLE_SCHEDULES != 'true'" ".github/workflows/$workflow.yml"
-        done
-        grep -Fq "github.event_name == 'workflow_dispatch' || vars.DISABLE_PAGES != 'true'" .github/workflows/pages.yml
         touch "$out"
       '';
   extract = pkgs.runCommand "check-extract" {

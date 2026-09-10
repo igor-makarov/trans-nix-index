@@ -18,10 +18,12 @@ nix develop --command bash scripts/ci/pages-pure
 nix develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
 ```
 
-Use the `pages` job in `.github/workflows/pure-index.yml` as the reference.
-Obtain its `enriched-snapshot` artifact (retry runs have an attempt suffix) and
-place `enriched-snapshot.tar.gz` under `_ci/pure/`, or produce it locally through
-pure enrichment. Do not use the legacy GHCR-backed `scripts/ci/pages` for verification.
+Use `.github/workflows/pipeline-site.yml` as the reference. Pull the named GHCR
+`enriched-snapshot` artifact by immutable digest and place its
+`enriched-snapshot.tar.gz` under `_ci/pure/`, or produce it locally through
+pure enrichment (see `docs/pure-pipeline.md`). Do not use the legacy GHCR-backed
+`scripts/ci/pages` for verification. Pipeline orchestration is manual-only;
+`pipeline-resume` can rebuild/test an existing snapshot without discovery or enrichment.
 
 ## Guidelines
 

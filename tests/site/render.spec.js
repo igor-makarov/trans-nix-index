@@ -37,14 +37,23 @@ test("the packages view draws a version table and both charts", async ({
 
   const rows = page.locator(".row.cols-ver");
   await expect(rows.first()).toBeVisible();
-  expect(await rows.count()).toBeGreaterThanOrEqual(2);
+  const versions = await (
+    await page.request.get("/versions/pkgs/ri.json")
+  ).json();
+  await expect(rows).toHaveCount(Object.keys(versions.attrs[ATTR]).length);
 
   await expect(
     page.getByRole("heading", { name: /When each version was the one/ }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: /How heavy each version was/ }),
-  ).toBeVisible();
+  const metadata = await (await page.request.get("/meta/pkgs/ri.json")).json();
+  const measured = Object.values(metadata.attrs[ATTR]).filter(
+    (entry) => entry.ns != null,
+  );
+  const weight = page.getByRole("heading", {
+    name: /How heavy each version was/,
+  });
+  if (measured.length >= 3) await expect(weight).toBeVisible();
+  else await expect(weight).toHaveCount(0);
 });
 
 test("the revisions view draws its first window of rows", async ({ page }) => {
@@ -54,7 +63,8 @@ test("the revisions view draws its first window of rows", async ({ page }) => {
 
   const rows = page.locator(".row.cols-rev");
   await expect(rows.first()).toBeVisible();
-  expect(await rows.count()).toBe(REV_PAGE);
+  const revisions = await (await page.request.get("/revisions.json")).json();
+  await expect(rows).toHaveCount(Math.min(REV_PAGE, revisions.length));
 });
 
 test("the releases view draws a row per release channel", async ({ page }) => {
@@ -77,9 +87,9 @@ test("the stats view draws its totals and every chart", async ({ page }) => {
   for (const total of TOTALS) {
     await expect(page.locator(".kpi .l", { hasText: total })).toBeVisible();
   }
-  expect(await page.locator("h3").count()).toBeGreaterThanOrEqual(
-    MIN_STAT_CHARTS,
-  );
+  await expect
+    .poll(() => page.locator("h3").count())
+    .toBeGreaterThanOrEqual(MIN_STAT_CHARTS);
 });
 
 test("the summary line states the index totals", async ({ page }) => {

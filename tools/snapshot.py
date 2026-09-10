@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Self-contained release archives: local files, checksums, no remote pins."""
 import argparse
+import gzip
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -66,9 +67,18 @@ def pack(root, output):
         json.dumps({"schema": 2, "files": files}, indent=2, sort_keys=True) + "\n"
     )
     verify(root)
-    with tarfile.open(output, "w:gz") as archive:
+    # Stable bytes let unchanged snapshots retain their OCI digest.
+    with open(output, "wb") as raw, gzip.GzipFile(
+        filename="", fileobj=raw, mode="wb", mtime=0
+    ) as zipped, tarfile.open(
+        fileobj=zipped, mode="w", format=tarfile.PAX_FORMAT
+    ) as archive:
         for name in sorted(files.keys() | {"manifest.json"}):
-            archive.add(root / name, arcname=name, recursive=False)
+            info = tarfile.TarInfo(name)
+            info.size = (root / name).stat().st_size
+            info.mode = 0o644
+            with (root / name).open("rb") as stream:
+                archive.addfile(info, stream)
 
 
 def unpack(archive, destination):

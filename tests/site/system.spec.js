@@ -107,6 +107,21 @@ test("switching to any system changes the store paths", async ({ page }) => {
       })
       .toBeGreaterThan(0);
 
+    // A nonempty list may still belong to the previous system while its shard loads.
+    const directory = system === systems[0] ? "meta" : `meta-${system}`;
+    const metadata = await (
+      await page.request.get(`/${directory}/pkgs/ri.json`)
+    ).json();
+    const expected = Object.values(metadata.attrs[ATTR])
+      .map((entry) => entry.d)
+      .sort();
+    await expect
+      .poll(async () =>
+        (await storePathsOf(page))
+          .map((text) => text.match(/\/nix\/store\/([0-9a-z]{32})-/)?.[1])
+          .sort(),
+      )
+      .toEqual(expected);
     const paths = await storePathsOf(page);
     for (const [other, otherPaths] of seen) {
       expect(

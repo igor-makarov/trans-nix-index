@@ -28,11 +28,11 @@ Open `http://127.0.0.1:8000` while the server is running.
 
 ## Pure pipeline site builds
 
-Use the `pages` job in `.github/workflows/pure-index.yml`, not the legacy
-GHCR-backed Pages workflow. Download the `enriched-snapshot` artifact from a
-successful `pure-index` enrichment run (retry artifacts have an attempt suffix)
-into `_ci/pure/`. It must provide `_ci/pure/enriched-snapshot.tar.gz`.
-Local pure enrichment can produce the same archive.
+Use `.github/workflows/pipeline-site.yml`, not the deleted legacy Pages workflow.
+Pull the named GHCR `enriched-snapshot` artifact by digest into a fresh directory,
+then copy its archive to `_ci/pure/enriched-snapshot.tar.gz`.
+[The pipeline reference](pure-pipeline.md) gives exact local creation and pull commands.
+Local pure enrichment produces the same archive.
 
 [The pure Pages script](../scripts/ci/pages-pure) verifies and unpacks that archive
 into `_ci/pure/pages-snapshot`, validates the data, builds the site with an explicit
@@ -95,8 +95,8 @@ Census regenerates availability artifacts and publishes a complete snapshot with
 
 ## Recovery
 
-For pure Pages builds, select a successful run's enriched snapshot artifact and
-repeat the pure pipeline site build above.
+For pure Pages builds, select a successful enriched snapshot digest and repeat
+the site build above, or manually dispatch `pipeline-resume` starting at `site`.
 
 For the legacy OCI pipeline only, restore any complete OCI snapshot of ours by passing `--tag <tag>` or
 `--digest sha256:<digest>` to `scripts/ci/pages` or `scripts/ci/update`.

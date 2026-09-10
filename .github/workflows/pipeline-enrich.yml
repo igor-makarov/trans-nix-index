@@ -1,0 +1,127 @@
+name: pipeline-enrich
+on:
+  workflow_call:
+    inputs:
+      repository:
+        type: string
+        required: true
+      digest:
+        type: string
+        required: true
+      force:
+        type: boolean
+        default: false
+      max_shards:
+        type: number
+        default: 20
+      census:
+        type: boolean
+        default: false
+    outputs:
+      digest:
+        value: ${{ jobs.build.outputs.digest || jobs.plan.outputs.digest }}
+permissions:
+  actions: read
+  contents: read
+  packages: write
+env:
+  GH_TOKEN: ${{ github.token }}
+  REPOSITORY: ${{ inputs.repository }}
+  UPSTREAM: ${{ inputs.digest }}
+jobs:
+  plan:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      digest: ${{ steps.plan.outputs.digest }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      previous: ${{ steps.plan.outputs.previous }}
+    env:
+      FORCE: ${{ inputs.force }}
+      MAX_SHARDS: ${{ inputs.max_shards }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - id: plan
+        run: |
+          mkdir -p _ci/pure
+          force=()
+          if [[ "$FORCE" == true ]]; then force=(--force); fi
+          nix develop --command python3 tools/pipeline-artifact.py check enriched-snapshot --repository "$REPOSITORY" --input "$UPSTREAM" "${force[@]}" > _ci/check.json
+          python3 -c 'import json; d=json.load(open("_ci/check.json")); print("run="+str(d["run"]).lower()); print("digest="+d["digest"]); print("previous="+d["previous"])' >> "$GITHUB_OUTPUT"
+          echo 'matrix={"include":[{"shard":0}]}' >> "$GITHUB_OUTPUT"
+          if [[ $(python3 -c 'import json; print(json.load(open("_ci/check.json"))["run"])') == True ]]; then
+            nix develop --command python3 tools/pipeline-artifact.py pull revision-index --repository "$REPOSITORY" --digest "$UPSTREAM" --path _ci/pure/merged-revisions
+            python3 -c 'import json,os; n=min(int(os.environ["MAX_SHARDS"]),len(json.load(open("_ci/pure/merged-revisions/index/revisions.json")))); assert 1 <= n <= 256; print("matrix="+json.dumps({"include":[{"shard":i} for i in range(n)]}))' >> "$GITHUB_OUTPUT"
+          fi
+  shards:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      PIPELINE_RESULT: /workspace/_ci/pure/merged-revisions
+      PREVIOUS: ${{ needs.plan.outputs.previous }}
+      PIPELINE_SHARD: ${{ strategy.job-index }}
+      PIPELINE_SHARDS: ${{ strategy.job-total }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - name: Pull revision index by digest
+        run: nix develop --command python3 tools/pipeline-artifact.py pull revision-index --repository "$REPOSITORY" --digest "$UPSTREAM" --path _ci/pure/merged-revisions
+      - name: Observe assigned roots and dependencies
+        run: |
+          nix develop --command bash scripts/ci/pull-previous "$REPOSITORY" "$PREVIOUS"
+          if [[ -n "$PREVIOUS" ]]; then export PIPELINE_PREVIOUS=/workspace/_ci/pure/previous; fi
+          nix develop --command bash scripts/ci/enrich-shard
+      - uses: actions/upload-artifact@v7
+        with:
+          name: observations-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: _ci/pure/enrichment-artifacts/
+          if-no-files-found: error
+          retention-days: 7
+  build:
+    needs: [plan, shards]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+    env:
+      PIPELINE_RESULT: /workspace/_ci/pure/merged-revisions
+      PIPELINE_ENRICH_SHARDS: /workspace/_ci/pure/enrichment-artifacts
+      MATRIX: ${{ needs.plan.outputs.matrix }}
+      PREVIOUS: ${{ needs.plan.outputs.previous }}
+      PIPELINE_CENSUS: ${{ inputs.census }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - id: receipts
+        run: python3 tools/pipeline-receipts.py observations >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.receipts.outputs.ids }}
+          merge-multiple: true
+          path: _ci/pure/enrichment-artifacts
+      - name: Merge and validate observations
+        run: |
+          nix develop --command python3 tools/pipeline-artifact.py pull revision-index --repository "$REPOSITORY" --digest "$UPSTREAM" --path _ci/pure/merged-revisions
+          export PIPELINE_SHARDS=$(python3 -c 'import json,os; print(len(json.loads(os.environ["MATRIX"])["include"]))')
+          nix develop --command bash scripts/ci/pull-previous "$REPOSITORY" "$PREVIOUS"
+          if [[ -n "$PREVIOUS" ]]; then export PIPELINE_PREVIOUS=/workspace/_ci/pure/previous; fi
+          nix develop --command bash scripts/ci/enrich-pure
+          mkdir -p _ci/pure/snapshot-export
+          cp _ci/pure/enriched-snapshot.tar.gz _ci/pure/snapshot-export/
+      - id: publish
+        run: |
+          digest=$(nix develop --command python3 tools/pipeline-artifact.py publish enriched-snapshot --repository "$REPOSITORY" --input "$UPSTREAM" --path _ci/pure/snapshot-export)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"

@@ -24,7 +24,4 @@ jobs:
         run: |
           test -z "$(git ls-files 'index/*' '*versions.json' '*history.json' 'revisions.json' 'releases.json' 'data-pins.json' 'index-pin.json')"
           test ! -d mvs
-      - name: Build site from one published snapshot
-        run: nix develop --command bash scripts/ci/pages
-      - name: Browser tests
-        run: nix develop --command bash -c 'SITE_ROOT="$PWD/_site" nix run ".#test-site"'
+      # Data-dependent site/browser validation lives in the manual pipeline.

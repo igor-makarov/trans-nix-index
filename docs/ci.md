@@ -1,54 +1,60 @@
-# CI and publication
+# CI and pipeline publication
 
-No workflow commits, pushes, or creates Git tags or GitHub Releases. All Nix jobs
-use `ubuntu-24.04-arm`, `actions/checkout@v7`, `jdx/mise-action@v4`, and the
-repository's Docker Nix wrapper. The build toolchain is pinned in source.
+`ci.yml` retains automatic main/PR formatting, pipeline/tooling tests, workflow
+linting, and generated-data exclusion checks. It no longer fetches the legacy
+GHCR snapshot to build a site. Data-dependent site/browser verification belongs
+to the manual pipeline.
 
-- **ci:** formatting, extraction/merge/liveness/OCI tests, generated-data exclusion, site build, browser tests.
-- **update-index:** hourly change detection against our latest snapshot. No changes means no evaluation, crawl, publication, or Pages build. Release-channel-only changes reuse existing index/store data; new revisions or stale store coverage trigger incremental work.
-- **census:** weekly availability checks, publishing a complete snapshot with refreshed availability artifacts.
-- **pure-index / pages:** builds and browser-tests the exact enriched snapshot artifact from `merge_enrichment`, then deploys when requested. This is the reference path for local site verification: `scripts/ci/pages-pure`.
-- **pages (legacy workflow):** builds a GHCR snapshot after publication or site-source changes. Do not use this workflow's `scripts/ci/pages` for local verification; use the pure pipeline artifact instead.
+All Nix jobs use `ubuntu-24.04-arm`, `actions/checkout@v7`, `jdx/mise-action@v4`,
+and the repository's Docker Nix wrapper. No workflow commits or pushes source.
 
-## Snapshot layout
+## Manual data pipeline
 
-Snapshots are public OCI artifacts in `ghcr.io/igor-makarov/trans-nix-index-data`.
-Each `YYYY-MM-DDTHH-MM-SSZ-run-<run-id>-<attempt>` registry tag holds one
-self-contained `data.tar.gz`. For example, `2026-09-07T06-30-00Z-run-34088947935-1`
-records the UTC publication time, GitHub Actions run ID, and attempt number.
-`latest` points to the newest successful publication. Existing snapshots use their
-OCI creation timestamp (the GHCR migration time). Legacy `data-*` aliases have
-been removed; the timestamp tags retain the same immutable digests.
+See [the pipeline reference](pure-pipeline.md) for inputs, handoffs, and local use.
 
-Archive contents:
+- `pure-index`: manual orchestrator, discovery through optional deployment.
+- `pipeline-resume`: manual restart from an existing named stage artifact.
+- Reusable workflows: `pipeline-discover`, `pipeline-index`, `pipeline-enrich`,
+  `pipeline-site`, and `pipeline-deploy`.
 
-- Index JSON: versions, history, stats, revisions, and releases.
-- `artifacts/`: all store-data files consumed by the site.
-- `state/`: crawl graph, census observations, and incremental miss tracking.
-- `manifest.json`: schema version and SHA-256 checksums of every payload file.
+The superseded `update-index`, `census`, and `pages` workflows are deleted.
+There are **no automatic pipeline triggers**. Production publishing is restricted
+to main/full manifests; named trial repositories isolate branch/limited runs.
 
-All working data and archive members are plain JSON/JSONL. Compression happens
-only when creating the outer archive. No older snapshots or upstream assets are referenced.
-The latest complete snapshot alone is sufficient for an incremental update.
-Older snapshot tags are rollback points; manifest digests identify immutable contents.
+## GHCR artifacts
 
-ORAS uploads the archive blob before publishing its OCI manifest. The publisher
-verifies the manifest's archive digest before advancing the `latest` registry tag.
-Consumers resolve a tag once and then read only by digest, verifying the layer's
-checksum and the archive's internal manifest. Pages checks registry tags for the
-triggering run ID and attempt before starting a data-triggered build; this does
-not require knowing the publication timestamp. Tag listing is paginated.
-Updater and census share a concurrency group to serialize publications.
+Each scope uses `ghcr.io/<owner>/<repo>-pipeline-<scope>`, with named tags:
 
-## Permissions and automation
+| Tag                 | Contents                                            |
+| ------------------- | --------------------------------------------------- |
+| `revision-manifest` | Revisions, releases, and revision build plan        |
+| `revision-index`    | Merged index and per-platform evaluations           |
+| `enriched-snapshot` | Complete checksummed snapshot archive               |
+| `site`              | Built site, published only after browser tests pass |
+| `deployed-site`     | Alias to the site digest successfully deployed      |
 
-Publishers use `GITHUB_TOKEN` with `packages: write` and `contents: read`.
-The OCI source annotation associates the package with this repository. The GHCR
-package must remain public for anonymous downloads and pull-request site builds.
-Registry credentials are temporary and never included in the snapshot.
+These are OCI artifacts, not runnable images. Stable archive and manifest metadata
+makes equal content retain its digest. Each stage records the upstream digest it
+processed. Equal input means reuse; force explicitly requests work after code
+changes. Uploads use candidate tags; named tags advance only after verification.
+Consumers pin digests, verify archive hashes/sizes, and reject unsafe archive paths.
+Registry errors are failures, not cache misses. Failure never advances acknowledgment.
 
-Automation is enabled by default. Set repository variables `DISABLE_PAGES=true`
-or `DISABLE_SCHEDULES=true` to pause automatic deployment or scheduled data jobs.
-Unset or `false` values leave automation enabled. Manual dispatch bypasses those gates.
-GitHub Pages deploys through Actions and additionally needs `pages: write` and
-`id-token: write`. Public Nix binary-cache downloads require no account or key.
+Per-revision JSONs remain in Cachix; intermediate shard receipts and observations
+are short-lived GitHub Actions artifacts. No historical aggregate is needed to
+rebuild an index. Previous enriched snapshots optionally provide observation reuse.
+
+## Permissions
+
+Registry writers use `GITHUB_TOKEN` with `packages: write`. Set newly created GHCR
+packages public if anonymous/local reads are desired. Credentials are temporary
+and never included in artifacts. Cachix publishing uses `CACHIX_AUTH_TOKEN` only
+in revision workers.
+
+Only the deployment workflow uses the protected `github-pages` environment and
+Pages deployment permissions. A branch build with deployment disabled never
+enters that environment. Successful deployment updates `deployed-site`; failed
+or skipped deployment leaves it untouched.
+
+Legacy OCI snapshot tooling remains for historical recovery, but its `latest`
+tag and old timestamp tags are not inputs to the new pipeline.

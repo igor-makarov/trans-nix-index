@@ -1,0 +1,104 @@
+name: pipeline-resume
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Existing GHCR namespace (production or named trial)'
+        type: string
+        default: trial
+      start:
+        description: 'First stage; resolves its input named tag once'
+        type: choice
+        options: [index, enrich, site, deploy]
+        default: site
+      force:
+        description: 'Rerun stages even for unchanged input'
+        type: boolean
+        default: true
+      max_shards:
+        type: number
+        default: 20
+      deploy:
+        description: 'Deploy tested output (main/production only)'
+        type: boolean
+        default: false
+permissions:
+  actions: read
+  contents: read
+  packages: write
+  pages: write
+  id-token: write
+concurrency:
+  group: pure-index-${{ inputs.scope }}
+  cancel-in-progress: false
+jobs:
+  source:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      repository: ${{ steps.source.outputs.repository }}
+      digest: ${{ steps.source.outputs.digest }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SCOPE: ${{ inputs.scope }}
+      START: ${{ inputs.start }}
+      DEPLOY: ${{ inputs.deploy }}
+      SHARDS: ${{ inputs.max_shards }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - id: source
+        run: |
+          [[ "$SCOPE" =~ ^[a-z][a-z0-9-]{0,40}$ ]]
+          [[ "$SHARDS" =~ ^[1-9][0-9]{0,2}$ ]] && (( SHARDS <= 256 ))
+          if [[ "$SCOPE" == production ]]; then [[ "$GITHUB_REF" == refs/heads/main ]]; fi
+          if [[ "$DEPLOY" == true || "$START" == deploy ]]; then
+            [[ "$SCOPE" == production && "$GITHUB_REF" == refs/heads/main && "$DEPLOY" == true ]]
+          fi
+          case "$START" in
+            index) tag=revision-manifest ;;
+            enrich) tag=revision-index ;;
+            site) tag=enriched-snapshot ;;
+            deploy) tag=site ;;
+            *) exit 1 ;;
+          esac
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}-pipeline-$SCOPE"
+          digest=$(nix develop --command python3 tools/pipeline-artifact.py resolve "$tag" --repository "$repository")
+          test -n "$digest"
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+  index:
+    needs: source
+    if: inputs.start == 'index'
+    uses: ./.github/workflows/pipeline-index.yml
+    secrets: inherit
+    with:
+      repository: ${{ needs.source.outputs.repository }}
+      digest: ${{ needs.source.outputs.digest }}
+      max_shards: ${{ inputs.max_shards }}
+      force: ${{ inputs.force }}
+  enrich:
+    needs: [source, index]
+    if: always() && !failure() && !cancelled() && (inputs.start == 'index' || inputs.start == 'enrich')
+    uses: ./.github/workflows/pipeline-enrich.yml
+    with:
+      repository: ${{ needs.source.outputs.repository }}
+      digest: ${{ needs.index.outputs.digest || needs.source.outputs.digest }}
+      max_shards: ${{ inputs.max_shards }}
+      force: ${{ inputs.force }}
+  site:
+    needs: [source, enrich]
+    if: always() && !failure() && !cancelled() && inputs.start != 'deploy'
+    uses: ./.github/workflows/pipeline-site.yml
+    with:
+      repository: ${{ needs.source.outputs.repository }}
+      digest: ${{ needs.enrich.outputs.digest || needs.source.outputs.digest }}
+      force: ${{ inputs.force }}
+  deploy:
+    needs: [source, site]
+    if: always() && !failure() && !cancelled() && inputs.deploy
+    uses: ./.github/workflows/pipeline-deploy.yml
+    with:
+      repository: ${{ needs.source.outputs.repository }}
+      digest: ${{ needs.site.outputs.digest || needs.source.outputs.digest }}

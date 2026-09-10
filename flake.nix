@@ -1,6 +1,7 @@
 {
   description = "Historical nixpkgs website and incremental release-data pipeline";
-  inputs = { };
+  # nix develop resolves its interactive Bash from this input, not mkShell attrs.
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/6713828a351efa628b025a1adf7f43cbf8597513";
   outputs =
     { self, ... }:
     let

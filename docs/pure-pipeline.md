@@ -1,230 +1,143 @@
-# Pure revision pipeline (manual rollout)
+# Manual pipeline and reusable workflows
 
-The new `pure-index` GitHub workflow is deliberately **manual-only**. It does
-not replace the scheduled `update-index` and `census` workflows yet. Those are
-kept running during validation; the new workflow never reads or writes GHCR.
-Do not enable an automatic backfill or cut over production until the small
-trial and enriched site have been reviewed.
+`pure-index.yml` is a **manual-only orchestrator**. There are no schedules,
+`workflow_run` chains, or registry event triggers. It calls reusable workflows
+with `workflow_call` and passes immutable OCI digests between them.
+`pipeline-resume.yml` is a second manual entry point for starting at an existing
+stage input. The old `update-index`, `census`, and `pages` workflows are removed.
+Census tooling is still available as an optional enrichment operation; its removal
+is a separate branch/change.
 
-## Functional boundaries and sharded jobs
+## Components and outputs
 
-One `pure-index` workflow contains the entire graph:
+```text
+pure-index (manual; validates options and serializes the namespace)
+  discovery   -> GHCR :revision-manifest
+  index       -> GHCR :revision-index
+  enrichment  -> GHCR :enriched-snapshot
+  site/tests  -> GHCR :site
+  deployment  -> GitHub Pages; GHCR :deployed-site acknowledgment
+```
 
-1. **discover** fetches S3/GitHub channel metadata, without prefetching source
-   trees except for historical release commit metadata fallback. The manifest
-   and revision plan are a GitHub run artifact. Optional `limit` selects that
-   many recent revisions; blank/omitted means unlimited. It accepts any positive
-   integer, without a rollout cap. This selects a complete dataset, not only
-   cache misses.
-2. **revisions** is a matrix of up to 256 shards, not one job per revision.
-   Discovery persists a shuffled revision plan, distributed round-robin for
-   balanced random shard assignment. Shards shuffle their queues and extraction
-   lane targets independently; Nix still controls dependency scheduling.
-   Each shard submits all cache-missing
-   revisions to separate extraction lanes: three output evaluations and one
-   version extraction concurrently, then up to four cheap combiners. GitHub manages runner capacity.
-   The `max_shards` workflow input defaults to 256 (valid range: 1–256).
-   Actual shard count is capped at the revision count; `limit=8, max_shards=4`
-   assigns two revisions to each of four zero-based shards. Both revision and
-   enrichment jobs use GitHub's `strategy.job-index` and `strategy.job-total`;
-   only discovery uses `max_shards` to construct the matrix.
-   Every revision is still an independent Nix derivation. Instantiated recipes,
-   downloaded inputs, and built outputs are GC-rooted through publication.
-3. **merge revisions** depends on all shards succeeding. Each shard publishes a small
-   GitHub artifact mapping revision SHAs to final JSON store paths. Merge
-   validates exact receipt coverage and path names against the manifest, fetches
-   all revision JSONs in one fetch-only Nix call, then runs the merge scripts
-   directly in the workspace. It never reconstructs extraction recipes or fetches
-   their nixpkgs source trees. Real `index/` and `evaluations/` directories travel
-   as a compressed GitHub artifact, not a Nix derivation or Cachix output.
-   Published revision JSONs remain reference-free, preserving package hashes
-   without retaining build dependencies. Extraction recipes are unchanged.
-   No live availability probes.
-4. **enrichment shard N** optionally checks output presence and recursively
-   crawls dependencies. It reuses the revision matrix count, but partitions
-   package attributes using a deterministic shuffle seeded by the full index.
-   Each shard publishes `enrichment-observations-shard-N` and
-   `resource-usage-enrichment-shard-N` artifacts (retry suffixes only after
-   attempt one). HTTP observations are not cached as Nix derivation results.
-   Deduplication is per runner; shared dependencies may be fetched by multiple shards.
-5. **merge enrichment** validates exact shard coverage and input identity,
-   merges output mappings and graph records, rejects conflicting observations,
-   then calculates closures globally and packages the snapshot. Optional census
-   uses `scripts/ci/observe-census`, also shared by the legacy workflow.
-6. **pages** runs only when deployment is explicitly requested; it builds and
-   browser-tests the enriched snapshot before deploying.
+- **pipeline-discover.yml** fetches revision and release metadata, then obtains
+  commit tree hashes without fetching trees/blobs. The artifact contains
+  `manifest.json` and `matrix.json`. Release pointers are ordinary manifest data;
+  they have no special update path. Discovery runs on every orchestrator invocation.
+- **pipeline-index.yml** checks its input digest, partitions a shuffled manifest
+  into bounded revision shards, builds only missing per-revision Cachix outputs,
+  validates exact receipt coverage, fetches the JSONs in one fetch-only Nix call,
+  and merges locally. The artifact contains `index/` and `evaluations/`.
+- **pipeline-enrich.yml** checks its input digest and partitions attributes across
+  shards. It probes cache membership and crawls runtime references, optionally
+  restoring observations from the previous enriched snapshot. Merge validates
+  shard coverage and calculates closures globally. Its OCI artifact contains
+  `enriched-snapshot.tar.gz`, with index JSON, store artifacts, crawl state and
+  an internal checksum manifest. HTTP observations are not Nix derivations.
+- **pipeline-site.yml** checks its input digest, unpacks the enriched snapshot,
+  builds `_site` and runs browser tests. Only a passing site is published as `:site`.
+  This workflow has no Pages environment or deployment permission.
+- **pipeline-deploy.yml** checks whether `:deployed-site` already points to the
+  requested tested site digest. Only a changed site enters the protected
+  `github-pages` environment, uploads the Pages artifact, and deploys. The
+  acknowledgment moves only after successful deployment.
 
-Enrichment output probes and recursive dependency discovery share one bounded
-async HTTP/2 queue across all platforms. The default is 2,048 async workers
-(`ENRICH_THREADS` overrides it; this counts tasks, not OS threads). Crawl state,
-checkpoint writes and transport counters are owned by one event loop. A small
-synchronous adapter serves the existing join coordinator. In-flight and completed requests are deduplicated by digest,
-including observed 404s. Output probes refresh observations each invocation;
-dependency metadata can resume from the saved graph. Transport failures are
-retryable but never checkpointed as absence. Requests allow HTTP cache responses
-up to one hour old; the temporary benchmark timeout is 120 seconds. The queue
-fetches no package payloads. Stage durations and exit codes are appended to
-`index/.outpaths/timings.tsv` under the enrichment working directory.
-These are local benchmark-based defaults, not guaranteed optimal on every runner.
+Shard handoffs within a workflow use short-lived Actions artifacts with attempt
+suffixes. Partial job reruns select the latest successful receipt for each shard
+from that run, retaining completed shards from earlier attempts; coverage and
+input identities are still validated before merging. Durable stage outputs use GHCR. Per-revision immutable outputs stay in
+Cachix, and their Nix store roots remain retained during local work/publication.
+No aggregate is uploaded to Cachix. No workflow commits or pushes source changes.
 
-Workflow-level concurrency permits only one **whole pipeline** at a time.
-There is no polling coordinator, custom check state, or external state database.
-GitHub's `needs` supplies fan-in. Revision jobs use `fail-fast: false`, allowing
-other shards to finish and publish useful work even when one fails. Merge does
-not run after a failed shard. The workflow files must be on the default branch
-before the first manual trial. One- and three-revision trials have passed on GitHub.
+## Named tags and avoiding repeated work
 
-A shard computes each revision's expected output path, checks only remote
-narinfo metadata (including referenced dependencies), and skips cached outputs
-without downloading their payloads. Cache misses are collected, realised together, and then pushed.
-Only HTTP 404 is treated as missing; network/server errors fail the job. This
-probe is an availability hint, not signature/payload verification: Nix verifies
-actual downloads when outputs are consumed. Sources may still need downloading
-to compute the expected path. Retrying shards reuses successful cached revisions.
-Shards must fit the hosted-runner job time limit; large backfills need bounded
-workflow runs even though the partitioner handles more than 256 revisions.
+Repositories are `ghcr.io/<owner>/<repo>-pipeline-<scope>`. Within each repository,
+use the simple tags above. No input-hash tags are needed. Temporary candidate tags
+allow upload verification before advancing a stage's named tag.
 
-Observation, census, and deployment default off. No scheduled backfill is
-enabled. `observation_previous` optionally supplies an enriched snapshot for
-external observation reuse only. Discovery and pure merge never read a previous
-index: every manifest revision supplies an independent cached input.
+Each artifact records `io.trans-nix-index.input`, the digest it consumed, and
+`io.trans-nix-index.stage`. A stage compares the current input digest with the
+input recorded in its last successful output. If equal, it returns that output's
+digest and skips expensive jobs. Missing outputs or differing inputs require work.
+Registry/authentication/network errors fail closed rather than triggering work.
+Failed stages never acknowledge the input, so subsequent runs retry them even
+when discovery is unchanged. Reused outputs still pass their digests downstream.
 
-Each revision publishes one attribute-grouped JSON containing versions, all three
-platforms' outputs, and errors, with shared names stored once where possible.
-Output and version extraction use separate Nix requests with `--max-jobs 3`
-and `--max-jobs 1`. Both must succeed before the combiners run. Lane assignments
-come from the actual revision derivation dependencies, without changing recipes.
-The Docker wrapper is used both locally and in CI; the final
-combiner copies data rather than linking intermediate outputs. Diagnostic text
-may still reference nixpkgs sources. Merge reconstructs the per-platform JSON
-interface for observation from the combined artifacts.
+Archives have sorted members and fixed gzip/tar timestamps and ownership. OCI
+creation metadata is fixed too, so rediscovering identical data yields the same
+digest. Tags are resolved once; all subsequent downloads use digests and verify
+archive SHA-256 and size. No package payloads are fetched during ordinary enrichment.
 
-Shard jobs record host CPU, available memory, swap use, and I/O wait every five
-seconds in separate seven-day `runner-*` GitHub artifacts. These are host-wide
-samples, not per-process measurements. Build/upload boundaries are timestamped.
+Code/configuration changes do not implicitly change this simple input comparison.
+Use **force** when changing extraction, enrichment, site code or tests. Force reruns
+stages while immutable revision outputs can still hit Cachix. Observations reused
+without force are historical observations, not a promise of current availability.
 
-New Cachix uploads are limited to per-revision outputs. Aggregated revisions
-and enriched snapshots travel as compressed GitHub artifacts, selected by exact
-artifact ID. Enriched snapshots include checksums verified before the Pages build.
-Pages uses its required deployment artifact; neither snapshots nor sites are
-uploaded to Cachix. Existing Cachix entries are not deleted. The discovery
-artifact contains metadata only. The legacy scheduled OCI workflows remain unchanged.
+## Manual controls and isolation
 
-## Inputs and outputs
+`pure-index` accepts:
 
-`nix/pipeline-build.nix` takes `inputs`, an absolute path to a directory with:
+- `scope`: defaults to `trial`; use distinct trial names for different datasets.
+- `limit`: positive number of latest revisions, or blank for all revisions.
+- `max_shards`: 1–256, default 20. Actual matrices are capped by revision count.
+- `force`: rerun stages even when inputs are unchanged (default false).
+- `enrich`: enrichment plus site build/tests (default true).
+- `census`: optional payload refresh, forcing enrichment (default false).
+- `deploy`: explicitly deploy a tested site (default false).
 
-- `manifest.json`: `{schema: 1, revisions: [...], releases: {...}}`.
-- Each revision: full `rev`, `date`, and channel `name`.
-- Indexed platforms are fixed in `nix/revision-systems.nix`, not supplied by discovery.
+`production` scope requires main and an unlimited manifest. Deployment additionally
+requires production scope and enrichment. Branch/limited trials cannot overwrite
+production tags. Both manual entry points share a namespace-level concurrency
+lock across the whole pipeline; child workflows must not acquire the same lock.
+Do not reuse a trial scope concurrently for unrelated datasets.
 
-Revision jobs use `nix/revision-build.nix` directly with only `name` and `rev`.
-They do not download or read the manifest. `builtins.fetchTree` resolves the
-GitHub source from the full commit; discovery does not calculate source hashes.
-The `system` argument on the Nix entry point describes the build host/toolchain,
-not which platforms to index. The manifest is still used for the aggregate.
+`pipeline-resume` takes `scope`, `start` (index/enrich/site/deploy), `force`,
+`max_shards`, and `deploy`. It resolves the appropriate named input tag and calls
+that stage plus subsequent stages, without discovery. For example, a site-only
+retry consumes `:enriched-snapshot`, without reevaluation or enrichment. Deployment
+is still opt-in and restricted to main/production. Standalone deployment requires
+`start=deploy` and `deploy=true`.
 
-No previous aggregate is accepted. Every manifest revision must have an input;
-no revision may have a
-missing or empty extraction. Individual unsupported packages are omitted by the
-existing extractors (output evaluation records error counts); an entirely empty
-revision/system fails. Unsupported historical revisions are not silently skipped.
+The package must be readable by consumers; publishers need `packages: write`.
+`CACHIX_AUTH_TOKEN` is forwarded only to revision builds. Credentials stay in
+short-lived registry configuration files, never in archives. Public packages
+should be made public through GHCR package settings after initial publication.
 
-The entry point exposes:
+## Local creation and verification
 
-- `perRevision."<channel-name>".versions`: attribute → version JSON.
-- `perRevision."<channel-name>".outputs.<system>`: evaluated outputs and package errors.
-- `perRevision."<channel-name>".all`: both products for one revision.
-- `index`: revisions, releases, versions, history, statistics.
-- `evaluations`: explicit files for every manifest revision and supported platform.
-- `all`: `index` and `evaluations`, consumed by external observation.
-
-Appending to a manifest does not change existing per-revision derivation
-identities. Evaluation runs with `dummy://`, IFD disabled, and no writable host
-store or daemon. It computes paths without building the indexed packages.
-Evaluation uses nix-eval-jobs' default worker memory threshold (4 GiB), with
-no custom memory sizing or override. Give the local VM enough RAM (6 GiB for
-one worker). Nix and nix-eval-jobs default to one build job and one evaluator
-worker; the pipeline leaves those defaults unchanged. Output evaluation reports progress every 30 seconds.
-
-CI merge always folds the full revision set in the workspace. Receipt checks
-reject missing, extra or duplicate revisions and mismatched store-path names.
-One `nix-store --realise` call downloads and roots all revision JSONs with
-`--max-jobs 0 --builders ''`; Nix schedules concurrent substitutions, and missing
-cached files fail rather than triggering extraction. The merge checks schema
-and revision identity while reading each JSON, with no duplicate parsing pass.
-The compressed merged artifact is consumed by enrichment shards and enrichment
-merge. The optional Nix aggregation expression remains available for local use,
-but CI does not instantiate, build or publish a merge derivation.
-
-Discovery also collects the latest published tip of each release channel since
-13.10, excluding beta-only and architecture/small channels. These are metadata
-pointers (full revision, commit date, channel build and name), not extra indexed
-revisions or extraction jobs. For old releases without a git-revision object,
-the full SHA is read by streaming the archive's .git-revision metadata (no
-source extraction or hashing). The unstable revision limit does not limit
-release metadata. Missing unstable git-revision files fail discovery; this
-fallback is release-only.
-
-Discovery uses one async HTTPX client with HTTP/2 enabled and default connection
-pool limits, without an application concurrency cap. Build files come from
-releases.nixos.org; paginated listings still use the S3 API with HTTP/1.1 fallback.
-Commit metadata requests are deduplicated by SHA within the run. GitHub tokens
-are sent only to the GitHub commit API. Failed discovery writes no input bundle.
-The workflow runs discovery through the Docker/Nix wrapper on mise's PATH, including
-HTTPX and h2 dependencies. No GHCR metadata cache is used.
-
-## Local site verification
-
-Use `scripts/ci/pages-pure`, matching this workflow's `pages` job. The legacy
-`scripts/ci/pages` fetches GHCR data and is not the local verification path.
-Download the `enriched-snapshot` artifact from a successful enrichment run
-(retries add an attempt suffix), placing its `enriched-snapshot.tar.gz` in
-`_ci/pure/`, or use the archive produced by local pure enrichment.
+Run from the repository root using `scripts/nix` on PATH. This uses the existing
+persistent Docker Nix store; do not copy the checkout or create alternate stores.
+The following creates a three-revision snapshot locally using cached revision
+outputs where available. Discovery and merge destinations must not already exist.
+Enrichment can still involve many thousands of live cache requests.
 
 ```sh
+nix develop --command env PIPELINE_LIMIT=3 bash scripts/ci/discover-pure
+nix develop --command env PIPELINE_SHARD=0 PIPELINE_PUBLISH=false \
+  python3 tools/revision-shards.py build _ci/pure/inputs/matrix.json --shards 1
+nix develop --command bash scripts/ci/merge-pure
+nix develop --command env PIPELINE_RESULT=/workspace/_ci/pure/merged-revisions \
+  bash scripts/ci/enrich-pure
 nix develop --command bash scripts/ci/pages-pure
 ```
 
-This verifies the archive, builds `_site`, and runs browser tests without deploying.
-It requires the enriched snapshot, not the merged-revisions archive.
-
-## Local use
-
-The same derivations work locally; no CI credentials or Cachix uploads are
-required. Run from the repository root with mise activated so `nix` resolves to
-`scripts/nix`, the existing Linux Docker wrapper:
+`pages-pure` replaces its unpacked input on reruns, builds and browser-tests the
+snapshot without deploying. To reuse a GHCR snapshot locally, pass the repository
+and a resolved immutable digest:
 
 ```sh
-# One revision, without any manifest:
-nix build --file nix/revision-build.nix \
-  --argstr name nixos-26.11pre1068949.dc5d91f84032 \
-  --argstr rev dc5d91f840324650bac8c379428c7037a416959a \
-  all --out-link result-revision -L
-# For a smaller local test, select outputs.x86_64-linux instead of all.
-
-nix build --file nix/pipeline-build.nix \
-  --argstr inputs /workspace/_ci/my-inputs all --out-link result-pipeline -L
-
-# Tiny offline fixtures plus one real nixpkgs package path, under the sandbox:
-nix build '.#checks.aarch64-linux.pure-pipeline' --no-link -L
+nix develop --command python3 tools/pipeline-artifact.py pull enriched-snapshot \
+  --repository ghcr.io/OWNER/REPO-pipeline-trial \
+  --digest sha256:DIGEST --path _ci/pure/snapshot-input
+cp _ci/pure/snapshot-input/enriched-snapshot.tar.gz _ci/pure/
+nix develop --command bash scripts/ci/pages-pure
 ```
 
-For local external discovery without uploading anything:
+The download destination must not exist. Browser tests derive row/chart expectations
+from the snapshot; the pagination-state test skips snapshots with no second page.
+A failing browser suite is never published as a tested site.
 
-```sh
-nix develop --command python3 tools/discover-pipeline.py \
-  _ci/my-inputs --limit 1
-```
+## Future automation
 
-The destination must not exist. Discovery fetches channel and commit metadata,
-not nixpkgs source trees. GitHub credentials are optional but
-increase API rate limits. Merge the resulting manifest directly; no previous
-index is needed.
-
-`scripts/nix` configures the public `trans-nix-index` Cachix substituter and its
-signing public key for **every local and CI invocation**. Reads need no token.
-Publishing scripts require `CACHIX_AUTH_TOKEN`; CI obtains it from the repository
-secret of that name. No credential belongs in a manifest, Nix expression, or
-tracked config. Cachix is a cache, so keep the result paths and arrange retention
-for durable historical artifacts before a production cutover.
+No automation is enabled by this change. Later an hourly orchestrator schedule
+can run discovery; named artifact input comparisons will gate downstream work.
+There is no need for registry-triggered workflow loops or special release handling.
