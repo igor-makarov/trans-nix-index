@@ -1,9 +1,9 @@
 # Manual pipeline and reusable workflows
 
-`pure-index.yml` is a **manual-only orchestrator**. There are no schedules,
+`pipeline.yml` is a **manual-only orchestrator**. There are no schedules,
 `workflow_run` chains, or registry event triggers. It calls reusable workflows
 with `workflow_call` and passes immutable OCI digests between them.
-`pipeline-resume.yml` is a second manual entry point for starting at an existing
+`pipeline-manual.yml` is a second manual entry point for starting at an existing
 stage input. The old `update-index`, `census`, and `pages` workflows are removed.
 Census sweeps are removed; enrichment retains historical observations without
 claiming current cache availability.
@@ -11,7 +11,7 @@ claiming current cache availability.
 ## Components and outputs
 
 ```text
-pure-index (manual; validates options and serializes the namespace)
+pipeline (manual; validates options and serializes the namespace)
   discovery   -> GHCR :revision-manifest
   index       -> GHCR :revision-index
   enrichment  -> GHCR :enriched-snapshot
@@ -79,7 +79,7 @@ historical observations; even refreshed narinfos do not verify NAR payloads.
 
 ## Manual controls and isolation
 
-`pure-index` accepts:
+`pipeline` accepts:
 
 - `scope`: defaults to `trial`; use distinct trial names for different datasets.
 - `limit`: positive number of latest revisions, or blank for all revisions.
@@ -94,7 +94,7 @@ production tags. Both manual entry points share a namespace-level concurrency
 lock across the whole pipeline; child workflows must not acquire the same lock.
 Do not reuse a trial scope concurrently for unrelated datasets.
 
-`pipeline-resume` takes `scope`, `start` (index/enrich/site/deploy), `force`,
+`pipeline-manual` takes `scope`, `start` (index/enrich/site/deploy), `force`,
 `max_shards`, and `deploy`. It resolves the appropriate named input tag and calls
 that stage plus subsequent stages, without discovery. For example, a site-only
 retry consumes `:enriched-snapshot`, without reevaluation or enrichment. Deployment

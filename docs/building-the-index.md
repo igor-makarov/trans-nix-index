@@ -97,7 +97,7 @@ are not presented as current availability. There is no scheduled availability sw
 ## Recovery
 
 For pure Pages builds, select a successful enriched snapshot digest and repeat
-the site build above, or manually dispatch `pipeline-resume` starting at `site`.
+the site build above, or manually dispatch `pipeline-manual` starting at `site`.
 
 For the legacy OCI pipeline only, restore any complete OCI snapshot of ours by passing `--tag <tag>` or
 `--digest sha256:<digest>` to `scripts/ci/pages` or `scripts/ci/update`.

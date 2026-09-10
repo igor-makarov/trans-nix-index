@@ -12,8 +12,8 @@ and the repository's Docker Nix wrapper. No workflow commits or pushes source.
 
 See [the pipeline reference](pure-pipeline.md) for inputs, handoffs, and local use.
 
-- `pure-index`: manual orchestrator, discovery through optional deployment.
-- `pipeline-resume`: manual restart from an existing named stage artifact.
+- `pipeline`: manual orchestrator, discovery through optional deployment.
+- `pipeline-manual`: manual restart from an existing named stage artifact.
 - Reusable workflows: `pipeline-discover`, `pipeline-index`, `pipeline-enrich`,
   `pipeline-site`, and `pipeline-deploy`.
 

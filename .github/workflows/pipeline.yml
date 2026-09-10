@@ -1,5 +1,5 @@
-name: pure-index
-run-name: pure index (${{ inputs.limit || 'all' }} revisions, ${{ inputs.scope }})
+name: pipeline
+run-name: pipeline (${{ inputs.limit || 'all' }} revisions, ${{ inputs.scope }})
 on:
   workflow_dispatch:
     inputs:

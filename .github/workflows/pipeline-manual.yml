@@ -1,4 +1,4 @@
-name: pipeline-resume
+name: pipeline-manual
 on:
   workflow_dispatch:
     inputs:

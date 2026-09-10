@@ -11,7 +11,7 @@ nix fmt -- --ci
 nix build '.#checks-smoke' --no-link -L
 
 # Build and browser-test the pure pipeline's enriched snapshot.
-# Requires _ci/pure/enriched-snapshot.tar.gz from a successful pure-index enrichment.
+# Requires _ci/pure/enriched-snapshot.tar.gz from a successful pipeline enrichment.
 nix develop --command bash scripts/ci/pages-pure
 
 # Optionally rerun browser tests against the built site.
@@ -23,7 +23,7 @@ Use `.github/workflows/pipeline-site.yml` as the reference. Pull the named GHCR
 `enriched-snapshot.tar.gz` under `_ci/pure/`, or produce it locally through
 pure enrichment (see `docs/pure-pipeline.md`). Do not use the legacy GHCR-backed
 `scripts/ci/pages` for verification. Pipeline orchestration is manual-only;
-`pipeline-resume` can rebuild/test an existing snapshot without discovery or enrichment.
+`pipeline-manual` can rebuild/test an existing snapshot without discovery or enrichment.
 
 ## Guidelines
 
